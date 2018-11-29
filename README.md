@@ -1,4 +1,4 @@
-##Pathway prediction
+Pathway prediction
 
 This is an pathway prediction pipeline following "Guilt by association" principle. The following prior information will be integrated.
 
@@ -8,7 +8,7 @@ This is an pathway prediction pipeline following "Guilt by association" principl
 
 -GO semantic similarities
 
-##Golang
+Golang
 
 the follwing components are to implemented.
 
