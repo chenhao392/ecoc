@@ -28,6 +28,19 @@ func (f *cvFold) setXY(pos []int, neg []int, matX *mat64.Dense, vecY *mat64.Vect
 		f.Y.Set(i, 0, vecY.At(neg[i-nRowPos], 0))
 	}
 }
+func (f *cvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Vector) {
+	_, nColX := matX.Caps()
+	//_, nColY := matY.Caps()
+	nRow := len(idxArr)
+	//fmt.Println(nRowPos, nRowNeg)
+	f.X = mat64.NewDense(nRow, nColX, nil)
+	f.Y = mat64.NewDense(nRow, 1, nil)
+	for i := 0; i < nRow; i++ {
+		f.X.SetRow(i, matX.RawRowView(idxArr[i]))
+		//f.Y.SetRow(i, matY.RawRowView(idxArr[i]))
+		f.Y.Set(i, 0, vecY.At(idxArr[i], 0))
+	}
+}
 
 func minIdx(inArray []float64) (idx int) {
 	m := 999999999.9

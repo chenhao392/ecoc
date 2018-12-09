@@ -1,6 +1,6 @@
 Pathway prediction
 
-This is an pathway prediction pipeline following "Guilt by association" principle. The following prior information will be integrated.
+This is a pathway prediction pipeline following "Guilt by association" principle. The following prior information will be integrated.
 
 -phylogenetic profiles across species
 
