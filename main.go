@@ -102,4 +102,13 @@ func main() {
 		fmt.Println(lamda, optMSE)
 	}
 	fmt.Println("pass step 3 cg decoding\n")
+	//k=5,sigmaFcts 0.5
+	k := 5
+	sigmaFcts := 0.5
+	tsYhat := mat64.NewDense(nRowTsY, nLabel, nil)
+	for i := 0; i < 1; i++ {
+		arr := IOC_MFADecoding(tsY_Prob.ColView(i), tsY_C.ColView(i), sigma, B, k, sigmaFcts, nLabel)
+		//tsYhat.SetCol()
+		fmt.Println(arr[0])
+	}
 }

@@ -235,7 +235,7 @@ func cgCal(gradient *mat64.Dense, preGradient *mat64.Dense, cg *mat64.Dense) (cg
 	term5.Mul(cg, beta)
 	cg2 = mat64.NewDense(0, 0, nil)
 	cg2.Sub(gradient, term5)
-	return cg
+	return cg2
 }
 func stepCal(gradient *mat64.Dense, cg *mat64.Dense, lamda float64, X *mat64.Dense) (step float64) {
 	term1 := mat64.NewDense(0, 0, nil)
@@ -359,4 +359,56 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, projMtx *ma
 		maxDiff = maxDiffCal(products, preProducts, n)
 	}
 	return weights
+}
+
+func IOC_MFADecoding(tsY_Prob *mate64.Vector, tsY_C *mate64.Vector, sigma *mat64.Dense, B *mat64.Dense, k int, sigmaFcts float64, nLabel int) (tsYhatData []float64) {
+	//Q
+	nRowTsY := tsY_prob.Len()
+	Q := mat64.NewDense(nRowTsY, 1, nil)
+	for i := 0; i < nRowTsY; i++ {
+		A.Set(i, 0, tsY_prob.At(i, 0))
+	}
+	//sigma and B for top k elements
+	Bsub := mat64.NewDense(nLabel, k, nil)
+	sigmaSub := mat64.NewDense(1, k, nil)
+	//transpose B as we don't have rawColView
+	B.T()
+	for i := 0; i < 5; i++ {
+		Bsub.SetCol(i, B.RawRowView(i))
+		sigmaSub.Set(0, i, sigma.At(0, i)*sigmaFcts)
+	}
+	//converting data formats
+	//decoding
+	iter := 0
+	//random permutation not implemented yet
+	for i := 0; i < nLabel; i++ {
+		logPos := math.Log(tsY_Prob.At(i, 0))
+		logNeg := math.Log(1 - tsY_Prob.At(i, 0))
+		posFct := mat64.NewDense(1, k, nil)
+		negFct := mat64.NewDense(1, k, nil)
+		for j := 0; j < nLabel; j++ {
+			if j == i || math.Abs(Q.At(j, 0)-0) < 0.0000000000000000001 {
+				continue
+			}
+			negFct = fOrderNegFctCal(negFct, Bsub, Q)
+			//second order, k is j2
+			for k := 0; k < j-1; k++ {
+				if k == i || math.Abs(Q.At(k, 0)-0) < 0.0000000000000000001 {
+					continue
+				}
+				negFct = sOrderNegFctCal(negFct, Bsub, Q)
+			}
+			//posFct
+			posFct = posFctCal(posFct, Bsub, Q)
+		}
+	}
+	//terms outside loop
+}
+
+func fOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense) (newNegGct *mat64.Dense) {
+
+}
+func sOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense) (newNegGct *mat64.Dense) {
+}
+func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense) (newNegGct *mat64.Dense) {
 }
