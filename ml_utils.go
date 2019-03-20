@@ -43,7 +43,7 @@ func (f *cvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Ve
 }
 
 func minIdx(inArray []float64) (idx int) {
-	m := 999999999.9
+	m := inArray[0]
 	for i, e := range inArray {
 		if e < m {
 			m = e

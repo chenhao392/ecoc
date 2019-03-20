@@ -20,7 +20,7 @@ func Pop(pToSlice *[]float64) float64 {
 func colStack(X *mat64.Dense, oneSlice []float64) (X2 *mat64.Dense) {
 	X = mat64.DenseCopyOf(X.T())
 	_, n := X.Caps()
-	ones := mat64.NewDense(1, n, oneSlice)
+	ones := mat64.DenseCopyOf(mat64.NewDense(1, n, oneSlice))
 	X2 = mat64.NewDense(0, 0, nil)
 	X2.Stack(ones, X)
 	X2 = mat64.DenseCopyOf(X2.T())
