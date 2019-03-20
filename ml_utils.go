@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gonum/matrix/mat64"
+	"math"
 )
 
 //for cross validation
@@ -44,12 +46,23 @@ func (f *cvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Ve
 
 func minIdx(inArray []float64) (idx int) {
 	m := inArray[0]
-	for i, e := range inArray {
+	minSet := make([]int, 0)
+	for _, e := range inArray {
 		if e < m {
 			m = e
-			idx = i
+			//idx = i
 		}
 	}
+
+	for i, e := range inArray {
+		if e == m {
+			minSet = append(minSet, i)
+			//idx = i
+		}
+	}
+	roundIdx := int(math.Round(float64(len(minSet)) / 2.0))
+	fmt.Println(len(minSet), roundIdx)
+	idx = minSet[roundIdx-1]
 	return idx
 }
 

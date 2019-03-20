@@ -96,7 +96,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 	//min error index
 	idx := minIdx(err)
 	regulator = 1.0 / lamda[idx]
-	fmt.Println(idx, lamda[idx], regulator)
+	fmt.Println("choose: ", idx, lamda[idx], regulator)
 	Ymat := mat64.NewDense(Y.Len(), 1, nil)
 	for i := 0; i < Y.Len(); i++ {
 		Ymat.Set(i, 0, Y.At(i, 0))
@@ -409,6 +409,7 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 	}
 	//sigma and B for top k elements
 	//Bsub := mat64.NewDense(nLabel, k, nil)
+	//fmt.Println(Bsub)
 	sigmaSub := mat64.NewDense(1, k, nil)
 	//transpose B as we don't have rawColView
 	//B.T()
@@ -447,23 +448,24 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 				continue
 			}
 			negFct = fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j)
-			fmt.Println(j, negFct.At(0, 0))
-			//second order, n is j2
-			for n := 0; n < j-1; n++ {
+			//fmt.Println("j1:", j, negFct.At(0, 0))
+			//second order, n is j2, golang is 0 based, sothat the for loop is diff on max
+			for n := 0; n < j; n++ {
 				if n == i || Q.At(0, n) == 0 {
 					continue
 				}
 				negFct = sOrderNegFctCal(negFct, Bsub, Q, j, n)
+				//fmt.Println(" j2:", n, negFct.At(0, 0))
 			}
 			//posFct
 			posFct = posFctCal(posFct, Bsub, Q, i, j)
 		}
-		fmt.Println(i, logPos, logNeg, negFct.At(0, 0), posFct.At(0, 1))
+		//fmt.Println(i, logPos, logNeg, negFct.At(0, 0), posFct.At(0, 1))
 		//terms outside loop
 		for l := 0; l < k; l++ {
 			negFct.Set(0, l, negFct.At(0, l)+tsY_C.At(0, l)*tsY_C.At(0, l))
 			value := Bsub.At(i, l)*Bsub.At(i, l) - 2*tsY_C.At(0, l)*Bsub.At(i, l)
-			posFct.Set(0, l, 2*posFct.At(0, l)+negFct.At(0, l)+value)
+			posFct.Set(0, l, posFct.At(0, l)+negFct.At(0, l)+value)
 		}
 		//sigma is full nLabel, but only top k used in the loop
 		var negSum float64 = 0.0
@@ -476,13 +478,13 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 			negSum = negSum + negValue
 			posSum = posSum + posValue
 		}
-		fmt.Println(i, logPos, logNeg, negFct.At(0, 0), posFct.At(0, 1))
+		//fmt.Println(i, logPos, logNeg, negFct.At(0, 0), posFct.At(0, 1))
 		logPos = logPos - posSum
 		logNeg = logNeg - negSum
 		preQi := Q.At(0, i)
 		newQi := math.Exp(logPos) / (math.Exp(logPos) + math.Exp(logNeg))
-		fmt.Println(i, preQi, newQi, posSum, negSum, logPos, logNeg, math.Exp(logPos), math.Exp(logNeg))
-		fmt.Println(i, preQi, newQi, logPos, logNeg)
+		//fmt.Println(i, preQi, newQi, posSum, negSum, logPos, logNeg, math.Exp(logPos), math.Exp(logNeg))
+		//fmt.Println(i, preQi, newQi, logPos, logNeg)
 		Q.Set(0, i, newQi)
 		if (math.Abs(newQi - preQi)) > 0.0001 {
 			//reset as all unprocessed
@@ -535,7 +537,11 @@ func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense,
 	//fmt.Println(a, b, k)
 	for i := 0; i < k; i++ {
 		value := Bsub.At(j, i) * Q.At(0, j)
+		//value = value * value
+		//fmt.Println(Bsub.At(j, i), Q.At(0, j), value)
 		newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(0, i)*Bsub.At(j, i)*Q.At(0, j))
+		//value = 2 * tsY_C.At(0, i) * Bsub.At(j, i) * Q.At(0, j)
+		//fmt.Println(tsY_C.At(0, i), value)
 	}
 	return newNegFct
 }
@@ -554,6 +560,7 @@ func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, i int, j 
 	for m := 0; m < k; m++ {
 		value := 2 * Bsub.At(i, m) * Bsub.At(j, m) * Q.At(0, j)
 		newPosFct.Set(0, m, posFct.At(0, m)+value)
+		//fmt.Println("posFct: ", m, value)
 	}
 	return newPosFct
 }

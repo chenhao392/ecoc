@@ -54,9 +54,9 @@ func main() {
 		ones[i] = 1
 	}
 	tsXdataB := colStack(tsXdata, ones)
-	for i := 0; i < nLabel; i++ {
-		//for i := 0; i < 0; i++ {
-		wMat, _, _ := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), k, nFea)
+	//for i := 0; i < nLabel; i++ {
+	for i := 0; i < 0; i++ {
+		wMat, _, _ := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), 5, nFea)
 		//fmt.Println(wMat)
 		element := mat64.NewDense(0, 0, nil)
 		element.Mul(tsXdataB, wMat)
@@ -71,6 +71,7 @@ func main() {
 	//a, b := tsY_Prob.Caps()
 	//fmt.Println(a, b)
 	//fmt.Println(tsY_Prob)
+	tsY_Prob, _, _ = readFile("tsY_probs.txt", false)
 	//for i := 0; i < 10; i++ {
 	//	fmt.Println(tsY_Prob.RawRowView(i))
 	//}
@@ -92,7 +93,7 @@ func main() {
 	//a, b := trXdata.Caps()
 	//c, d := trYdata.Caps()
 	//fmt.Println(a, b, c, d)
-	//err := cca.CanonicalCorrelations(trXdata, trYdata, nil)
+	//err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
 	//err := cca.CanonicalCorrelations(mat64.DenseCopyOf(trXdata.T()), mat64.DenseCopyOf(trYdata.T()), nil)
 	//if err != nil {
 	//	log.Fatal(err)
@@ -103,17 +104,17 @@ func main() {
 
 	//skip as B is not the same with matlab code for debug
 	_, B := ccaProjectTwoMatrix(trXdataB, trYdata)
-	B, _, _ = readFile("B.txt", false)
+	//B, _, _ = readFile("B.txt", false)
 	fmt.Println("pass step 2 cca coding\n")
 	//fmt.Println(B.At(0, 0))
-	//for i := 0; i < 10; i++ {
-	//	fmt.Println(B.RawRowView(i))
-	//}
+	for i := 0; i < 10; i++ {
+		fmt.Println(B.RawRowView(i))
+	}
 	//fmt.Println(B)
 	//fmt.Println(B.T())
 	//fmt.Println(A)
 	//fmt.Println(C)
-	//os.Exit(0)
+	os.Exit(0)
 	//fmt.Printf("\n\nlabel projection = %.4f", mat64.Formatted(B.View(0, 0, nLabel-1, nLabel-1), mat64.Prefix("         ")))
 	//CCA code
 	trY_Cdata := mat64.NewDense(0, 0, nil)
@@ -124,8 +125,8 @@ func main() {
 	//decoding with regression
 	tsY_C := mat64.NewDense(nRowTsY, nLabel, nil)
 	sigma := mat64.NewDense(1, nLabel, nil)
-	//for i := 0; i < nLabel; i++ {
-	for i := 0; i < 0; i++ {
+	for i := 0; i < nLabel; i++ {
+		//for i := 0; i < 0; i++ {
 		beta, lamda, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), k, nFea, nTr)
 		sigma.Set(0, i, math.Sqrt(lamda))
 		//bias term for tsXdata added before
@@ -142,8 +143,8 @@ func main() {
 	//	fmt.Println(tsY_C.RawRowView(i))
 	//}
 	//fmt.Println(sigma)
-	tsY_C, _, _ = readFile("tsY_C.txt", false)
-	sigma, _, _ = readFile("sigma.txt", false)
+	//tsY_C, _, _ = readFile("tsY_C.txt", false)
+	//sigma, _, _ = readFile("sigma.txt", false)
 	//fmt.Println(sigma)
 	//for i := 0; i < 10; i++ {
 	//	fmt.Println(tsY_C.RawRowView(i))
@@ -153,7 +154,7 @@ func main() {
 	//nR, _ := B.Caps()
 	Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, k))
 	//tsYhat := mat64.NewDense(nRowTsY, nLabel, nil)
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 20; i++ {
 		//a, b := tsY_Prob.Caps()
 		//fmt.Println(a, b, nLabel)
 		//the doc seems to be old, (0,x] seems to be correct
@@ -162,8 +163,8 @@ func main() {
 		arr := IOC_MFADecoding(nRowTsY, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
 		//arr := IOC_MFADecoding(tsY_Prob.ColView(i), tsY_C.ColView(i), sigma, B, k, sigmaFcts, nLabel)
 		//tsYhat.SetCol()
-		fmt.Printf("%.3f", arr)
-		//fmt.Println(arr)
+		//fmt.Printf("%.3f", arr)
+		fmt.Println(arr)
 		fmt.Println("")
 	}
 	os.Exit(0)
