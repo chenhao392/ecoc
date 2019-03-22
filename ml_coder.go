@@ -76,8 +76,8 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 				negTrain = append(negTrain, negIndex[j])
 			}
 		}
-		fmt.Println(posTest, posTrain)
-		fmt.Println(negTest, negTrain)
+		//fmt.Println(posTest, posTrain)
+		//fmt.Println(negTest, negTrain)
 		trainFold[i].setXY(posTrain, negTrain, X, Y)
 		testFold[i].setXY(posTest, negTest, X, Y)
 	}
@@ -97,12 +97,12 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 			err[i] = err[i] + e
 			fmt.Println(i, j, e, err[i])
 		}
-		fmt.Println(i, err[i])
+		//fmt.Println(i, err[i])
 	}
 	//min error index
 	idx := minIdx(err)
 	regulator = 1.0 / lamda[idx]
-	fmt.Println("choose: ", idx, lamda[idx], regulator)
+	//fmt.Println("choose: ", idx, lamda[idx], regulator)
 	Ymat := mat64.NewDense(Y.Len(), 1, nil)
 	for i := 0; i < Y.Len(); i++ {
 		Ymat.Set(i, 0, Y.At(i, 0))
@@ -122,8 +122,10 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 }
 func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int, nTr int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
 	//prior := mat64.NewDense(0, nFeature+1, nil)
-	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	//lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	lamda := []float64{0.01, 0.1, 1, 10, 100}
+	err := []float64{0, 0, 0, 0, 0}
 	//projMtx := mat64.NewDense(nFeature+1, nFeature+1, nil)
 	//projMtx.Set(0, 0, 1)
 	//idxPerm 0:nTr, value as random order nTr

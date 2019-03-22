@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	//"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 )
@@ -100,8 +100,8 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 	var prec float64
 	var rec float64
 	//P and R
-	if tp+fn == 0 {
-		prec = 0.5
+	if tp+fp == 0 {
+		prec = 0
 	} else {
 		prec = float64(tp) / (float64(tp) + float64(fp))
 	}
@@ -116,6 +116,6 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 	} else {
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
-	fmt.Println(prec, rec, tp, fp, fn, F1)
+	//fmt.Println(prec, rec, tp, fp, fn, F1)
 	return F1
 }

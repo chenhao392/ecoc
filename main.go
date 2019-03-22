@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gonum/matrix/mat64"
-	//"github.com/gonum/stat"
-	//"log"
+	"github.com/gonum/stat"
+	"log"
 	"math"
 	"os"
 	//"strconv"
@@ -18,13 +18,13 @@ import (
 
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "data/tsX.10.txt", "testFeatureSet")
-	var tsY *string = flag.String("tsY", "data/tsY.10.txt", "testLabelSet")
-	var trX *string = flag.String("trX", "data/trX.10.txt", "trainFeatureSet")
-	var trY *string = flag.String("trY", "data/trY.10.txt", "trainLabelSet")
+	var tsX *string = flag.String("tsX", "data/tsX.txt", "testFeatureSet")
+	var tsY *string = flag.String("tsY", "data/tsY.txt", "testLabelSet")
+	var trX *string = flag.String("trX", "data/trX.txt", "trainFeatureSet")
+	var trY *string = flag.String("trY", "data/trY.txt", "trainLabelSet")
 	k := 4
 	sigmaFcts := 0.5
-	nFold := 5
+	nFold := 2
 	//var inThreads *int = flag.Int("p", 1, "number of threads")
 	flag.Parse()
 	//read data
@@ -76,7 +76,7 @@ func main() {
 	//for i := 0; i < 10; i++ {
 	//	fmt.Println(tsY_Prob.RawRowView(i))
 	//}
-	os.Exit(0)
+	//os.Exit(0)
 	//pass Liblin
 	fmt.Println("pass step 1 coding\n")
 	//adding bias term for trXdata
@@ -90,27 +90,28 @@ func main() {
 	//}
 	//os.Exit(0)
 	// Calculate the canonical correlations.
-	//var cca stat.CC
-	//a, b := trXdata.Caps()
-	//c, d := trYdata.Caps()
-	//fmt.Println(a, b, c, d)
-	//err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
-	//err := cca.CanonicalCorrelations(mat64.DenseCopyOf(trXdata.T()), mat64.DenseCopyOf(trYdata.T()), nil)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//B := cca.Right(nil, false)
+	var cca stat.CC
+	a, b := trXdataB.Caps()
+	c, d := trYdata.Caps()
+	fmt.Println(a, b, c, d)
+	err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	B := cca.Right(nil, false)
+	B = mat64.DenseCopyOf(B.T())
 	//A := cca.Right(nil, true)
 	//C := cca.Corrs(nil)
 
 	//skip as B is not the same with matlab code for debug
-	_, B := ccaProjectTwoMatrix(trXdataB, trYdata)
+	//_, B := ccaProjectTwoMatrix(trXdataB, trYdata)
+	//B = ccaProject(trXdataB, trYdata)
 	//B, _, _ = readFile("B.txt", false)
 	fmt.Println("pass step 2 cca coding\n")
 	//fmt.Println(B.At(0, 0))
-	//for i := 0; i < 10; i++ {
-	//	fmt.Println(B.RawRowView(i))
-	//}
+	for i := 0; i < 10; i++ {
+		fmt.Println(B.RawRowView(i))
+	}
 	//fmt.Println(B)
 	//fmt.Println(B.T())
 	//fmt.Println(A)
@@ -129,7 +130,7 @@ func main() {
 	for i := 0; i < nLabel; i++ {
 		//for i := 0; i < 0; i++ {
 		beta, lamda, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr)
-		sigma.Set(0, i, math.Sqrt(lamda))
+		sigma.Set(0, i, math.Sqrt(optMSE))
 		//bias term for tsXdata added before
 		element := mat64.NewDense(0, 0, nil)
 		element.Mul(tsXdataB, beta)
@@ -164,7 +165,8 @@ func main() {
 		arr := IOC_MFADecoding(nRowTsY, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
 		//arr := IOC_MFADecoding(tsY_Prob.ColView(i), tsY_C.ColView(i), sigma, B, k, sigmaFcts, nLabel)
 		//tsYhat.SetCol()
-		fmt.Printf("%.2f", arr)
+		fmt.Printf("%d ", i)
+		fmt.Printf("%.1f", arr)
 		//fmt.Println(arr)
 		fmt.Println("")
 	}
