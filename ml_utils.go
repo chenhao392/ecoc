@@ -61,7 +61,7 @@ func minIdx(inArray []float64) (idx int) {
 		}
 	}
 	roundIdx := int(math.Round(float64(len(minSet)) / 2.0))
-	fmt.Println(len(minSet), roundIdx)
+	//fmt.Println(len(minSet), roundIdx)
 	idx = minSet[roundIdx-1]
 	return idx
 }
@@ -116,5 +116,6 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 	} else {
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
+	fmt.Println(prec, rec, tp, fp, fn, F1)
 	return F1
 }

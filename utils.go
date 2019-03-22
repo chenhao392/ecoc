@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gonum/matrix/mat64"
+	"math/rand"
 )
 
 func Shift(pToSlice *[]string) string {
@@ -25,4 +26,28 @@ func colStack(X *mat64.Dense, oneSlice []float64) (X2 *mat64.Dense) {
 	X2.Stack(ones, X)
 	X2 = mat64.DenseCopyOf(X2.T())
 	return X2
+}
+
+func cvSplit(nElement int, nFold int) (cvSet map[int][]int) {
+	rand.Seed(1)
+	cvSet = make(map[int][]int)
+	idxPerm := rand.Perm(nElement)
+	j := 0
+	if nElement >= nFold {
+		for i := 0; i < nElement; i++ {
+			j = i % nFold
+			cvSet[j] = append(cvSet[j], idxPerm[i])
+		}
+	} else {
+		nDiff := nFold - nElement
+		for i := 0; i < nDiff; i++ {
+			idxPermTemp := rand.Perm(nElement)
+			idxPerm = append(idxPerm, idxPermTemp[0])
+		}
+		for i := 0; i < nElement; i++ {
+			j = i % nFold
+			cvSet[j] = append(cvSet[j], idxPerm[i])
+		}
+	}
+	return cvSet
 }

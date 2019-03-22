@@ -33,6 +33,7 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 	sValuesFullX := Xsvd.Values(nil)
 	sValuesX := make([]float64, 0)
 	for i := 0; i < nsX; i++ {
+		//0.000001 is the default cut-off for ranks in matlab
 		if sValuesFullX[i] > 0.000001 {
 			sValuesX = append(sValuesX, sValuesFullX[i])
 		}
@@ -124,7 +125,8 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 	W_x.Mul(uX, term2)
 	//fmt.Println(W_x.At(1, 0))
 	//for i := 0; i < 13; i++ {
-	//	fmt.Println(mat64.DenseCopyOf(pB).RawRowView(i))
+	//fmt.Println(mat64.DenseCopyOf(pB).RawRowView(i))
+	//	fmt.Println(W_x.RawRowView(i))
 	//}
 	//os.Exit(0)
 	//W_y after solve eigen
@@ -139,10 +141,12 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 	//normalize W_y
 	m, n := W_y.Caps()
 	nFactor := make([]float64, n)
-	for j := 0; j < n; j++ {
-		for i := 0; i < m; i++ {
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
 			nFactor[j] = nFactor[j] + W_y.At(i, j)*W_y.At(i, j)
 		}
+	}
+	for j := 0; j < n; j++ {
 		nFactor[j] = math.Sqrt(nFactor[j])
 	}
 	for i := 0; i < m; i++ {

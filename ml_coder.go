@@ -41,6 +41,8 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 	}
 	trainFold := make([]cvFold, nFold)
 	testFold := make([]cvFold, nFold)
+	posCvSet := cvSplit(nPos, nFold)
+	negCvSet := cvSplit(nNeg, nFold)
 	for i := 0; i < nFold; i++ {
 		posTrain := make([]int, 0)
 		negTrain := make([]int, 0)
@@ -52,13 +54,14 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 		//a := i * nPos / nFold
 		//b := (i+1)*nPos/nFold - 1
 		//fmt.Println(a, b)
-		for j := i * nPos / nFold; j < (i+1)*nPos/nFold-1; j++ {
-			posTest = append(posTest, posIndex[j])
-			posTestMap[j] = posIndex[j]
+		//for j := i * nPos / nFold; j < (i+1)*nPos/nFold-1; j++ {
+		for j := 0; j < len(posCvSet[i]); j++ {
+			posTest = append(posTest, posIndex[posCvSet[i][j]])
+			posTestMap[posCvSet[i][j]] = posIndex[posCvSet[i][j]]
 		}
-		for j := i * nNeg / nFold; j < (i+1)*nNeg/nFold-1; j++ {
-			negTest = append(negTest, negIndex[j])
-			negTestMap[j] = negIndex[j]
+		for j := 0; j < len(negCvSet[i]); j++ {
+			negTest = append(negTest, negIndex[negCvSet[i][j]])
+			negTestMap[negCvSet[i][j]] = negIndex[negCvSet[i][j]]
 		}
 		//the rest is for training
 		for j := 0; j < nPos; j++ {
@@ -73,6 +76,8 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 				negTrain = append(negTrain, negIndex[j])
 			}
 		}
+		fmt.Println(posTest, posTrain)
+		fmt.Println(negTest, negTrain)
 		trainFold[i].setXY(posTrain, negTrain, X, Y)
 		testFold[i].setXY(posTest, negTest, X, Y)
 	}
@@ -90,6 +95,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 			wMat := mat64.NewDense(len(w), 1, w)
 			e := 1.0 - computeF1(testFold[j].X, testFold[j].Y, wMat)
 			err[i] = err[i] + e
+			fmt.Println(i, j, e, err[i])
 		}
 		fmt.Println(i, err[i])
 	}
