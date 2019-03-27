@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gonum/matrix/mat64"
-	"github.com/gonum/stat"
-	"log"
+	//"github.com/gonum/stat"
+	//"log"
 	"math"
 	"os"
 	//"strconv"
@@ -18,10 +18,10 @@ import (
 
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "data/tsX.txt", "testFeatureSet")
-	var tsY *string = flag.String("tsY", "data/tsY.txt", "testLabelSet")
-	var trX *string = flag.String("trX", "data/trX.txt", "trainFeatureSet")
-	var trY *string = flag.String("trY", "data/trY.txt", "trainLabelSet")
+	var tsX *string = flag.String("tsX", "data/tsX.10.txt", "testFeatureSet")
+	var tsY *string = flag.String("tsY", "data/tsY.10.txt", "testLabelSet")
+	var trX *string = flag.String("trX", "data/trX.10.txt", "trainFeatureSet")
+	var trY *string = flag.String("trY", "data/trY.10.txt", "trainLabelSet")
 	k := 4
 	sigmaFcts := 0.5
 	nFold := 2
@@ -55,8 +55,8 @@ func main() {
 		ones[i] = 1
 	}
 	tsXdataB := colStack(tsXdata, ones)
-	for i := 0; i < nLabel; i++ {
-		//for i := 0; i < 0; i++ {
+	//for i := 0; i < nLabel; i++ {
+	for i := 0; i < 0; i++ {
 		wMat, _, _ := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), nFold, nFea)
 		//fmt.Println(wMat)
 		element := mat64.NewDense(0, 0, nil)
@@ -72,7 +72,7 @@ func main() {
 	//a, b := tsY_Prob.Caps()
 	//fmt.Println(a, b)
 	//fmt.Println(tsY_Prob)
-	//tsY_Prob, _, _ = readFile("tsY_probs.txt", false)
+	tsY_Prob, _, _ = readFile("tsY_probs.txt", false)
 	//for i := 0; i < 10; i++ {
 	//	fmt.Println(tsY_Prob.RawRowView(i))
 	//}
@@ -90,22 +90,22 @@ func main() {
 	//}
 	//os.Exit(0)
 	// Calculate the canonical correlations.
-	var cca stat.CC
-	a, b := trXdataB.Caps()
-	c, d := trYdata.Caps()
-	fmt.Println(a, b, c, d)
-	err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	B := cca.Right(nil, false)
-	B = mat64.DenseCopyOf(B.T())
+	//var cca stat.CC
+	//a, b := trXdataB.Caps()
+	//c, d := trYdata.Caps()
+	//fmt.Println(a, b, c, d)
+	//err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//B := cca.Right(nil, false)
+	//B = mat64.DenseCopyOf(B.T())
 	//A := cca.Right(nil, true)
 	//C := cca.Corrs(nil)
 
 	//skip as B is not the same with matlab code for debug
 	//_, B := ccaProjectTwoMatrix(trXdataB, trYdata)
-	//B = ccaProject(trXdataB, trYdata)
+	B := ccaProject(trXdataB, trYdata)
 	//B, _, _ = readFile("B.txt", false)
 	fmt.Println("pass step 2 cca coding\n")
 	//fmt.Println(B.At(0, 0))
@@ -116,7 +116,7 @@ func main() {
 	//fmt.Println(B.T())
 	//fmt.Println(A)
 	//fmt.Println(C)
-	//os.Exit(0)
+	os.Exit(0)
 	//fmt.Printf("\n\nlabel projection = %.4f", mat64.Formatted(B.View(0, 0, nLabel-1, nLabel-1), mat64.Prefix("         ")))
 	//CCA code
 	trY_Cdata := mat64.NewDense(0, 0, nil)

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"github.com/gonum/matrix"
 	"github.com/gonum/matrix/mat64"
+	"gonum.org/v1/gonum/mat"
 	"log"
 	"math"
-	//"os"
+	"os"
 )
 
 func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y *mat64.Dense) {
@@ -159,8 +160,10 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 }
 
 func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
-	var Xsvd, Ysvd, Bsvd mat64.SVD
-	var uXFull, vXFull, uYFull, vYFull, pBFull mat64.Dense
+	var Xsvd, Ysvd mat64.SVD
+	var Bsvd mat.SVD
+	var uXFull, vXFull, uYFull, vYFull mat64.Dense
+	var pBFull mat.Dense
 	//init SVD
 	ok := Xsvd.Factorize(X.T(), matrix.SVDThin)
 	if !ok {
@@ -199,8 +202,10 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	fmt.Println(Xrank, Yrank)
 	//resize matrix according to ranks
 	a, _ := uXFull.Caps()
+	//fmt.Println(a, b, "uX")
 	uX := uXFull.Slice(0, a, 0, Xrank)
 	a, _ = vXFull.Caps()
+	//fmt.Println(a, b, "vX")
 	vX := vXFull.Slice(0, a, 0, Xrank)
 
 	a, _ = uYFull.Caps()
@@ -243,34 +248,43 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	//[W, eigenList] =solve_eigen(X_U,X_Sigma,X_V,H,X_reg)
 	term1 := mat64.NewDense(0, 0, nil)
 	B := mat64.NewDense(0, 0, nil)
-	term1.Mul(Y_SigmaB, vY.T())
-	B.Mul(term1, H)
-	//B is correct
-	//for i := 0; i < 14; i++ {
-	//	fmt.Println(B.RawRowView(i))
-	//}
-	//fmt.Println("~~~~")
-	ok = Bsvd.Factorize(B, matrix.SVDThin)
+	//term1.Mul(Y_SigmaB, vY.T())
+	//B.Mul(term1, H)
+	term1.Mul(vY.T(), H)
+	B.Mul(Y_SigmaB, term1)
+	//B is correct but row 7/8 flipped and row 7,8,9,10 sign flipped
+	B2, _, _ := readFile2("BsolveEigen.txt", false)
+	for i := 0; i < 10; i++ {
+		fmt.Println(B2.RawRowView(i))
+	}
+	fmt.Println("~~~~")
+	ok = Bsvd.Factorize(B2, mat.SVDThin)
 	if !ok {
 		log.Fatal("SVD for B factorization failed!")
 	}
-	pBFull.UFromSVD(&Bsvd)
+	Bsvd.UTo(&pBFull)
 
 	bValuesFull := Bsvd.Values(nil)
 	Brank := 0
 	for i := 0; i < len(bValuesFull); i++ {
 		if bValuesFull[i] > 0.000001 {
+			fmt.Println(bValuesFull[i])
 			Brank += 1
 		}
 	}
 	a, _ = pBFull.Caps()
-	//fmt.Println(a, Brank)
-	pB := pBFull.Slice(0, a, 0, Brank)
+	fmt.Println(a, Brank, "pB")
+	//pB := pBFull.Slice(0, a, 0, Brank)
+	for i := 0; i < 10; i++ {
+		fmt.Println(pBFull.RawRowView(i))
+	}
+	os.Exit(0)
 	term2 := mat64.NewDense(0, 0, nil)
 	//W_x = mat64.NewDense(0, 0, nil)
 	W_y = mat64.NewDense(0, 0, nil)
 	//term2.Mul(uX, X_Sigma3)
-	term2.Mul(Y_Sigma3, pB)
+	//term2.Mul(Y_Sigma3, pB)
+	term2.Mul(Y_Sigma3, uY)
 	//W_x.Mul(term2, pB)
 	W_y.Mul(uY, term2)
 	//fmt.Println(W_x.At(1, 0))
