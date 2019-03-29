@@ -18,13 +18,13 @@ import (
 
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "data/tsX.txt", "testFeatureSet")
-	var tsY *string = flag.String("tsY", "data/tsY.txt", "testLabelSet")
-	var trX *string = flag.String("trX", "data/trX.txt", "trainFeatureSet")
-	var trY *string = flag.String("trY", "data/trY.txt", "trainLabelSet")
-	k := 4
+	var tsX *string = flag.String("tsX", "data/tsX.10.txt", "testFeatureSet")
+	var tsY *string = flag.String("tsY", "data/tsY.10.txt", "testLabelSet")
+	var trX *string = flag.String("trX", "data/trX.10.txt", "trainFeatureSet")
+	var trY *string = flag.String("trY", "data/trY.10.txt", "trainLabelSet")
+	k := 3
 	sigmaFcts := 0.5
-	nFold := 2
+	nFold := 5
 	//var inThreads *int = flag.Int("p", 1, "number of threads")
 	flag.Parse()
 	//read data
@@ -91,27 +91,27 @@ func main() {
 	//os.Exit(0)
 	// Calculate the canonical correlations.
 	var cca stat.CC
-	a, b := trXdataB.Caps()
-	c, d := trYdata.Caps()
-	fmt.Println(a, b, c, d)
+	//a, b := trXdataB.Caps()
+	//c, d := trYdata.Caps()
+	//fmt.Println(a, b, c, d)
 	err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	B := cca.Right(nil, false)
-	B = mat64.DenseCopyOf(B.T())
+	//B = mat64.DenseCopyOf(B.T())
 	//A := cca.Right(nil, true)
 	//C := cca.Corrs(nil)
 
 	//skip as B is not the same with matlab code for debug
 	//_, B := ccaProjectTwoMatrix(trXdataB, trYdata)
-	//B = ccaProject(trXdataB, trYdata)
+	//B := ccaProject(trXdataB, trYdata)
 	//B, _, _ = readFile("B.txt", false)
 	fmt.Println("pass step 2 cca coding\n")
 	//fmt.Println(B.At(0, 0))
-	for i := 0; i < 10; i++ {
-		fmt.Println(B.RawRowView(i))
-	}
+	//for i := 0; i < 10; i++ {
+	//	fmt.Println(B.RawRowView(i))
+	//}
 	//fmt.Println(B)
 	//fmt.Println(B.T())
 	//fmt.Println(A)

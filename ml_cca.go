@@ -13,11 +13,11 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 	var Xsvd, Ysvd, Bsvd mat64.SVD
 	var uXFull, vXFull, uYFull, vYFull, pBFull mat64.Dense
 	//init SVD
-	ok := Xsvd.Factorize(X.T(), matrix.SVDThin)
+	ok := Xsvd.Factorize(X.T(), matrix.SVDFull)
 	if !ok {
 		log.Fatal("SVD for X factorization failed!")
 	}
-	ok = Ysvd.Factorize(Y.T(), matrix.SVDThin)
+	ok = Ysvd.Factorize(Y.T(), matrix.SVDFull)
 	if !ok {
 		log.Fatal("SVD for Y factorization failed!")
 	}
@@ -100,7 +100,7 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 	//	fmt.Println(B.RawRowView(i))
 	//}
 	//fmt.Println("~~~~")
-	ok = Bsvd.Factorize(B, matrix.SVDThin)
+	ok = Bsvd.Factorize(B, matrix.SVDFull)
 	if !ok {
 		log.Fatal("SVD for B factorization failed!")
 	}
@@ -162,11 +162,11 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	var Xsvd, Ysvd, Bsvd mat64.SVD
 	var uXFull, vXFull, uYFull, vYFull, pBFull mat64.Dense
 	//init SVD
-	ok := Xsvd.Factorize(X.T(), matrix.SVDThin)
+	ok := Xsvd.Factorize(X.T(), matrix.SVDFull)
 	if !ok {
 		log.Fatal("SVD for X factorization failed!")
 	}
-	ok = Ysvd.Factorize(Y.T(), matrix.SVDThin)
+	ok = Ysvd.Factorize(Y.T(), matrix.SVDFull)
 	if !ok {
 		log.Fatal("SVD for Y factorization failed!")
 	}
@@ -250,7 +250,7 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	//	fmt.Println(B.RawRowView(i))
 	//}
 	//fmt.Println("~~~~")
-	ok = Bsvd.Factorize(B, matrix.SVDThin)
+	ok = Bsvd.Factorize(B, matrix.SVDFull)
 	if !ok {
 		log.Fatal("SVD for B factorization failed!")
 	}
@@ -274,9 +274,9 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	//W_x.Mul(term2, pB)
 	W_y.Mul(uY, term2)
 	//fmt.Println(W_x.At(1, 0))
-	//for i := 0; i < 13; i++ {
-	//fmt.Println(mat64.DenseCopyOf(pB).RawRowView(i))
-	//	fmt.Println(W_x.RawRowView(i))
+	//for i := 0; i < 10; i++ {
+	//	fmt.Println(mat64.DenseCopyOf(pB).RawRowView(i))
+	//	//fmt.Println(W_x.RawRowView(i))
 	//}
 	//os.Exit(0)
 	//W_y after solve eigen
