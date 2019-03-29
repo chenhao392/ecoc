@@ -22,7 +22,7 @@ func main() {
 	var tsY *string = flag.String("tsY", "data/tsY.10.txt", "testLabelSet")
 	var trX *string = flag.String("trX", "data/trX.10.txt", "trainFeatureSet")
 	var trY *string = flag.String("trY", "data/trY.10.txt", "trainLabelSet")
-	k := 3
+	k := 4
 	sigmaFcts := 0.5
 	nFold := 5
 	//var inThreads *int = flag.Int("p", 1, "number of threads")
@@ -32,6 +32,7 @@ func main() {
 	tsYdata, _, _ := readFile(*tsY, false)
 	trXdata, _, _ := readFile(*trX, false)
 	trYdata, _, _ := readFile(*trY, false)
+	fmt.Println(trYdata)
 	//vars
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
@@ -72,7 +73,7 @@ func main() {
 	//a, b := tsY_Prob.Caps()
 	//fmt.Println(a, b)
 	//fmt.Println(tsY_Prob)
-	//tsY_Prob, _, _ = readFile("tsY_probs.txt", false)
+	//tsY_Prob, _, _ = readFile("tsY_probs.emo.txt", false)
 	//for i := 0; i < 10; i++ {
 	//	fmt.Println(tsY_Prob.RawRowView(i))
 	//}
@@ -90,10 +91,10 @@ func main() {
 	//}
 	//os.Exit(0)
 	// Calculate the canonical correlations.
-	var cca stat.CC
 	//a, b := trXdataB.Caps()
 	//c, d := trYdata.Caps()
 	//fmt.Println(a, b, c, d)
+	var cca stat.CC
 	err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
 	if err != nil {
 		log.Fatal(err)
@@ -104,12 +105,12 @@ func main() {
 	//C := cca.Corrs(nil)
 
 	//skip as B is not the same with matlab code for debug
-	//_, B := ccaProjectTwoMatrix(trXdataB, trYdata)
-	//B := ccaProject(trXdataB, trYdata)
-	//B, _, _ = readFile("B.txt", false)
+	//_, B = ccaProjectTwoMatrix(trXdataB, trYdata)
+	//B = ccaProject(trXdataB, trYdata)
+	//B, _, _ = readFile("Bemo.txt", false)
 	fmt.Println("pass step 2 cca coding\n")
 	//fmt.Println(B.At(0, 0))
-	//for i := 0; i < 10; i++ {
+	//for i := 0; i < 6; i++ {
 	//	fmt.Println(B.RawRowView(i))
 	//}
 	//fmt.Println(B)
@@ -145,8 +146,8 @@ func main() {
 	//	fmt.Println(tsY_C.RawRowView(i))
 	//}
 	//fmt.Println(sigma)
-	//tsY_C, _, _ = readFile("tsY_C.txt", false)
-	//sigma, _, _ = readFile("sigma.txt", false)
+	//tsY_C, _, _ = readFile("tsY_C.emo.txt", false)
+	//sigma, _, _ = readFile("sigma.emo.txt", false)
 	//fmt.Println(sigma)
 	//for i := 0; i < 10; i++ {
 	//	fmt.Println(tsY_C.RawRowView(i))
@@ -155,20 +156,27 @@ func main() {
 	//k=5,sigmaFcts 0.5
 	//nR, _ := B.Caps()
 	Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, k))
-	//tsYhat := mat64.NewDense(nRowTsY, nLabel, nil)
+	tsYhat := mat64.NewDense(nRowTsY, nLabel, nil)
 	for i := 0; i < nTs; i++ {
 		//a, b := tsY_Prob.Caps()
 		//fmt.Println(a, b, nLabel)
 		//the doc seems to be old, (0,x] seems to be correct
+		//dim checked to be correct
 		tsY_Prob_slice := tsY_Prob.Slice(i, i+1, 0, nLabel)
 		tsY_C_slice := tsY_C.Slice(i, i+1, 0, k)
 		arr := IOC_MFADecoding(nRowTsY, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
 		//arr := IOC_MFADecoding(tsY_Prob.ColView(i), tsY_C.ColView(i), sigma, B, k, sigmaFcts, nLabel)
 		//tsYhat.SetCol()
-		fmt.Printf("%d ", i)
-		fmt.Printf("%.1f", arr)
+		//fmt.Printf("%d ", i)
+		//fmt.Printf("%.1f", arr)
 		//fmt.Println(arr)
-		fmt.Println("")
+		//fmt.Println("")
+		tsYhat.SetRow(i, arr)
+	}
+	//F1 score
+	for i := 0; i < nLabel; i++ {
+		f1 := computeF1_2(tsYdata.ColView(i), tsYhat.ColView(i))
+		fmt.Println(f1)
 	}
 	os.Exit(0)
 }

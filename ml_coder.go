@@ -26,6 +26,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 	posIndex := make([]int, 0)
 	negIndex := make([]int, 0)
 	for i := 0; i < nY; i++ {
+		fmt.Println(Y.At(i, 0))
 		if Y.At(i, 0) == 1 {
 			posIndex = append(posIndex, i)
 		} else {
@@ -34,6 +35,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 	}
 	nPos := len(posIndex)
 	nNeg := len(negIndex)
+	//fmt.Println(nPos)
 	//random permutation skipped for now
 	//nFold == 1 skippped for noe
 	if nFold == 1 {
@@ -95,14 +97,15 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 			wMat := mat64.NewDense(len(w), 1, w)
 			e := 1.0 - computeF1(testFold[j].X, testFold[j].Y, wMat)
 			err[i] = err[i] + e
-			fmt.Println(i, j, e, err[i])
+			//fmt.Println("choose in loop:", i, j, e, err[i])
 		}
-		//fmt.Println(i, err[i])
+		err[i] = err[i] / float64(nFold)
+		fmt.Println("to choose lamda", lamda[i], err[i])
 	}
 	//min error index
 	idx := minIdx(err)
 	regulator = 1.0 / lamda[idx]
-	//fmt.Println("choose: ", idx, lamda[idx], regulator)
+	fmt.Println("choose: ", idx, lamda[idx], regulator)
 	Ymat := mat64.NewDense(Y.Len(), 1, nil)
 	for i := 0; i < Y.Len(); i++ {
 		Ymat.Set(i, 0, Y.At(i, 0))
@@ -122,14 +125,14 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 }
 func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int, nTr int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
 	//prior := mat64.NewDense(0, nFeature+1, nil)
-	//lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	lamda := []float64{0.01, 0.1, 1, 10, 100}
-	err := []float64{0, 0, 0, 0, 0}
+	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	//lamda := []float64{0.01, 0.1, 1, 10, 100}
+	//err := []float64{0, 0, 0, 0, 0}
 	//projMtx := mat64.NewDense(nFeature+1, nFeature+1, nil)
 	//projMtx.Set(0, 0, 1)
 	//idxPerm 0:nTr, value as random order nTr
-	rand.Seed(1)
+	rand.Seed(2)
 	idxPerm := rand.Perm(nTr)
 	//cv folds data
 	trainFold := make([]cvFold, nFold)
@@ -241,16 +244,24 @@ func cgCal(gradient *mat64.Dense, preGradient *mat64.Dense, cg *mat64.Dense) (cg
 	term3 := mat64.NewDense(0, 0, nil)
 	term4 := mat64.NewDense(0, 0, nil)
 	term5 := mat64.NewDense(0, 0, nil)
+	term6 := mat64.NewDense(0, 0, nil)
+	term7 := mat64.NewDense(0, 0, nil)
 	beta := mat64.NewDense(0, 0, nil)
 	term1.Sub(gradient, preGradient)
 	//Gt := mat64.DenseCopyOf(gradient.T())
 	//CGt := mat64.DenseCopyOf(cg.T())
 	term2.Mul(cg.T(), term1)
 	term3.Mul(gradient.T(), term1)
-	//term4 := mat64.DenseCopyOf(term3.Inverse())
-	term4.Inverse(term2)
-	//right division in matlab. A/B = A*inv(B)
-	beta.Mul(term3, term4)
+	//right matrix division in matlab. A/B = A*inv(B)
+	//term4.Inverse(term2)
+	//beta.Mul(term3, term4)
+	//This A*inv(B) works if B is roughly square
+	//beta=A*B'*inv(B*B')
+	//A is Term3, B is Term2
+	term4.Mul(term2, term2.T())
+	term6.Inverse(term4)
+	term7.Mul(term3, term2.T())
+	beta.Mul(term7, term6)
 	term5.Mul(cg, beta)
 	cg2 = mat64.NewDense(0, 0, nil)
 	cg2.Sub(gradient, term5)

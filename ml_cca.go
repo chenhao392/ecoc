@@ -161,12 +161,13 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	var Xsvd, Ysvd, Bsvd mat64.SVD
 	var uXFull, vXFull, uYFull, vYFull, pBFull mat64.Dense
+	Yreg := 0.0
 	//init SVD
-	ok := Xsvd.Factorize(X.T(), matrix.SVDFull)
+	ok := Xsvd.Factorize(X.T(), matrix.SVDThin)
 	if !ok {
 		log.Fatal("SVD for X factorization failed!")
 	}
-	ok = Ysvd.Factorize(Y.T(), matrix.SVDFull)
+	ok = Ysvd.Factorize(Y.T(), matrix.SVDThin)
 	if !ok {
 		log.Fatal("SVD for Y factorization failed!")
 	}
@@ -185,6 +186,7 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 		//0.000001 is the default cut-off for ranks in matlab
 		if sValuesFullX[i] > 0.000001 {
 			sValuesX = append(sValuesX, sValuesFullX[i])
+			//fmt.Println(sValuesFullX[i])
 		}
 	}
 	sValuesFullY := Ysvd.Values(nil)
@@ -211,7 +213,7 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	H := mat64.NewDense(0, 0, nil)
 	H.Mul(vX, uX.T())
 	//for i := 0; i < 10; i++ {
-	//	fmt.Println(mat64.DenseCopyOf(uY).RawRowView(i))
+	//	fmt.Println(mat64.DenseCopyOf(vX).RawRowView(i))
 	//}
 	//fmt.Println("~~~~~")
 	//H is correct
@@ -222,14 +224,14 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	//os.Exit(0)
 	sValues := Ysvd.Values(nil)
 	Y_Sigma := mat64.NewDense(Yrank, Yrank, nil)
-	Y_Sigma2 := mat64.NewDense(Yrank, Yrank, nil)
-	Y_Sigma3 := mat64.NewDense(Yrank, Yrank, nil)
+	Y_SigmaReg := mat64.NewDense(Yrank, Yrank, nil)
+	Y_SigmaRegInv := mat64.NewDense(Yrank, Yrank, nil)
 	Y_SigmaB := mat64.NewDense(Yrank, Yrank, nil)
 	for i := 0; i < Yrank; i++ {
 		Y_Sigma.Set(i, i, sValues[i])
-		Y_Sigma2.Set(i, i, 1/sValues[i])
-		Y_Sigma3.Set(i, i, 1/sValues[i])
-		Y_SigmaB.Set(i, i, 1.0)
+		Y_SigmaReg.Set(i, i, sValues[i]*sValues[i]+Yreg)
+		Y_SigmaRegInv.Set(i, i, 1/(sValues[i]*sValues[i]+Yreg))
+		Y_SigmaB.Set(i, i, sValues[i]/Y_SigmaRegInv.At(i, i))
 	}
 	sValues = Xsvd.Values(nil)
 	X_Sigma := mat64.NewDense(Xrank, Xrank, nil)
@@ -250,7 +252,7 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	//	fmt.Println(B.RawRowView(i))
 	//}
 	//fmt.Println("~~~~")
-	ok = Bsvd.Factorize(B, matrix.SVDFull)
+	ok = Bsvd.Factorize(B, matrix.SVDThin)
 	if !ok {
 		log.Fatal("SVD for B factorization failed!")
 	}
@@ -270,14 +272,14 @@ func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	//W_x = mat64.NewDense(0, 0, nil)
 	W_y = mat64.NewDense(0, 0, nil)
 	//term2.Mul(uX, X_Sigma3)
-	term2.Mul(Y_Sigma3, pB)
+	term2.Mul(Y_SigmaRegInv, pB)
 	//W_x.Mul(term2, pB)
 	W_y.Mul(uY, term2)
 	//fmt.Println(W_x.At(1, 0))
-	//for i := 0; i < 10; i++ {
-	//	fmt.Println(mat64.DenseCopyOf(pB).RawRowView(i))
-	//	//fmt.Println(W_x.RawRowView(i))
-	//}
+	for i := 0; i < 1; i++ {
+		fmt.Println(mat64.DenseCopyOf(pB).RawRowView(i))
+		//	//fmt.Println(W_x.RawRowView(i))
+	}
 	//os.Exit(0)
 	//W_y after solve eigen
 	//term3 := mat64.NewDense(0, 0, nil)

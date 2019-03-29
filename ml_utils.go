@@ -73,6 +73,13 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 	for i := range onesSlice {
 		onesSlice[i] = 1
 	}
+	//Y*2-1, tmp fix
+	r, c := Y.Caps()
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			Y.Set(i, j, Y.At(i, j)*2-1)
+		}
+	}
 	//ones := mat64.NewDense(1, n, onesSlice)
 	//X2 := mat64.NewDense(0, 0, nil)
 	//X2.Stack(ones, X)
@@ -94,6 +101,48 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 		} else if y > 0 && yh <= 0 {
 			fn += 1
 		} else if y <= 0 && yh <= 0 {
+			tn += 1
+		}
+	}
+	var prec float64
+	var rec float64
+	//P and R
+	if tp+fp == 0 {
+		prec = 0
+	} else {
+		prec = float64(tp) / (float64(tp) + float64(fp))
+	}
+	if tp+fn == 0 {
+		rec = 0.5
+	} else {
+		rec = float64(tp) / (float64(tp) + float64(fn))
+	}
+	//F1
+	if prec+rec == 0 {
+		F1 = 0
+	} else {
+		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
+	}
+	//fmt.Println(prec, rec, tp, fp, fn, F1)
+	return F1
+}
+
+func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector) (F1 float64) {
+	n := Y.Len()
+	var tp int
+	var fp int
+	var fn int
+	var tn int
+	for i := 0; i < n; i++ {
+		y := Y.At(i, 0)
+		yh := Yh.At(i, 0)
+		if y > 0 && yh >= 0.5 {
+			tp += 1
+		} else if y <= 0 && yh >= 0.5 {
+			fp += 1
+		} else if y > 0 && yh < 0.5 {
+			fn += 1
+		} else if y <= 0 && yh < 0.5 {
 			tn += 1
 		}
 	}
