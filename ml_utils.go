@@ -14,14 +14,11 @@ type cvFold struct {
 
 func (f *cvFold) setXY(pos []int, neg []int, matX *mat64.Dense, vecY *mat64.Vector) {
 	_, nColX := matX.Caps()
-	//nColY := vecY.Len()
 	nRowPos := len(pos)
 	nRowNeg := len(neg)
-	//fmt.Println(nRowPos, nRowNeg)
 	f.X = mat64.NewDense(nRowPos+nRowNeg, nColX, nil)
 	f.Y = mat64.NewDense(nRowPos+nRowNeg, 1, nil)
 	for i := 0; i < nRowPos; i++ {
-		//fmt.Println(i)
 		f.X.SetRow(i, matX.RawRowView(pos[i]))
 		f.Y.Set(i, 0, vecY.At(pos[i], 0))
 	}
@@ -32,14 +29,11 @@ func (f *cvFold) setXY(pos []int, neg []int, matX *mat64.Dense, vecY *mat64.Vect
 }
 func (f *cvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Vector) {
 	_, nColX := matX.Caps()
-	//_, nColY := matY.Caps()
 	nRow := len(idxArr)
-	//fmt.Println(nRowPos, nRowNeg)
 	f.X = mat64.NewDense(nRow, nColX, nil)
 	f.Y = mat64.NewDense(nRow, 1, nil)
 	for i := 0; i < nRow; i++ {
 		f.X.SetRow(i, matX.RawRowView(idxArr[i]))
-		//f.Y.SetRow(i, matY.RawRowView(idxArr[i]))
 		f.Y.Set(i, 0, vecY.At(idxArr[i], 0))
 	}
 }
@@ -50,24 +44,20 @@ func minIdx(inArray []float64) (idx int) {
 	for _, e := range inArray {
 		if e < m {
 			m = e
-			//idx = i
 		}
 	}
 
 	for i, e := range inArray {
 		if e == m {
 			minSet = append(minSet, i)
-			//idx = i
 		}
 	}
 	roundIdx := int(math.Round(float64(len(minSet)) / 2.0))
-	//fmt.Println(len(minSet), roundIdx)
 	idx = minSet[roundIdx-1]
 	return idx
 }
 
 func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
-	//X = mat64.DenseCopyOf(X.T())
 	n, _ := X.Caps()
 	onesSlice := make([]float64, n)
 	for i := range onesSlice {
@@ -80,10 +70,6 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 			Y.Set(i, j, Y.At(i, j)*2-1)
 		}
 	}
-	//ones := mat64.NewDense(1, n, onesSlice)
-	//X2 := mat64.NewDense(0, 0, nil)
-	//X2.Stack(ones, X)
-	//X2 = mat64.DenseCopyOf(X2.T())
 	X2 := colStack(X, onesSlice)
 	Yh := mat64.NewDense(0, 0, nil)
 	Yh.Mul(X2, beta)
@@ -123,7 +109,6 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 	} else {
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
-	//fmt.Println(prec, rec, tp, fp, fn, F1)
 	return F1
 }
 
@@ -165,6 +150,5 @@ func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector) (F1 float64) {
 	} else {
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
-	//fmt.Println(prec, rec, tp, fp, fn, F1)
 	return F1
 }
