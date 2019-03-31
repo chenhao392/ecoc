@@ -10,21 +10,29 @@ import (
 	"github.com/gonum/stat"
 	"log"
 	"math"
+	"math/rand"
 	"os"
+	"runtime"
+	"sync"
 	//"unsafe"
 )
 
+var wg sync.WaitGroup
+var mutex sync.Mutex
+
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "data/tsX.10.txt", "testFeatureSet")
-	var tsY *string = flag.String("tsY", "data/tsY.10.txt", "testLabelSet")
-	var trX *string = flag.String("trX", "data/trX.10.txt", "trainFeatureSet")
-	var trY *string = flag.String("trY", "data/trY.10.txt", "trainLabelSet")
+	var tsX *string = flag.String("tsX", "data/tsX.emo.txt", "testFeatureSet")
+	var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "testLabelSet")
+	var trX *string = flag.String("trX", "data/trX.emo.txt", "trainFeatureSet")
+	var trY *string = flag.String("trY", "data/trY.emo.txt", "trainLabelSet")
 	k := 4
 	sigmaFcts := 0.5
 	nFold := 5
 	//var inThreads *int = flag.Int("p", 1, "number of threads")
 	flag.Parse()
+	rand.Seed(1)
+	runtime.GOMAXPROCS(4)
 	//read data
 	tsXdata, _, _ := readFile(*tsX, false)
 	tsYdata, _, _ := readFile(*tsY, false)
@@ -88,17 +96,14 @@ func main() {
 	//decoding with regression
 	tsY_C := mat64.NewDense(nRowTsY, nLabel, nil)
 	sigma := mat64.NewDense(1, nLabel, nil)
+	//for workers
+	randValues := RandListFromUniDist(nTr)
+	idxPerm := rand.Perm(nTr)
+	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
-		beta, lamda, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr)
-		sigma.Set(0, i, math.Sqrt(optMSE))
-		//bias term for tsXdata added before
-		element := mat64.NewDense(0, 0, nil)
-		element.Mul(tsXdataB, beta)
-		for j := 0; j < nTs; j++ {
-			tsY_C.Set(j, i, element.At(j, 0))
-		}
-		fmt.Println(lamda, optMSE)
+		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm)
 	}
+	wg.Wait()
 	fmt.Println("pass step 3 cg decoding\n")
 	Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, k))
 	tsYhat := mat64.NewDense(nRowTsY, nLabel, nil)
@@ -116,4 +121,18 @@ func main() {
 		fmt.Println(f1)
 	}
 	os.Exit(0)
+}
+func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int) {
+	defer wg.Done()
+	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr, randValues, idxPerm)
+	mutex.Lock()
+	sigma.Set(0, i, math.Sqrt(optMSE))
+	//bias term for tsXdata added before
+	element := mat64.NewDense(0, 0, nil)
+	element.Mul(tsXdataB, beta)
+	for j := 0; j < nTs; j++ {
+		tsY_C.Set(j, i, element.At(j, 0))
+	}
+	//fmt.Println(i, lamda, sigma)
+	mutex.Unlock()
 }

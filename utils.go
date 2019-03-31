@@ -29,7 +29,7 @@ func colStack(X *mat64.Dense, oneSlice []float64) (X2 *mat64.Dense) {
 }
 
 func cvSplit(nElement int, nFold int) (cvSet map[int][]int) {
-	rand.Seed(2)
+	//rand.Seed(2)
 	cvSet = make(map[int][]int)
 	idxPerm := rand.Perm(nElement)
 	j := 0

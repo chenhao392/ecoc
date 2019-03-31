@@ -6,7 +6,7 @@ import (
 	"github.com/gonum/matrix/mat64"
 	"gonum.org/v1/gonum/stat/distuv"
 	"math"
-	"math/rand"
+	//"math/rand"
 	//"os"
 )
 
@@ -104,14 +104,14 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 	errFinal = err[idx]
 	return wMat, regulator, errFinal
 }
-func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int, nTr int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
+func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
 	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	//lamda := []float64{0.01, 0.1, 1, 10, 100}
 	//err := []float64{0, 0, 0, 0, 0}
 	//idxPerm 0:nTr, value as random order nTr
-	rand.Seed(2)
-	idxPerm := rand.Perm(nTr)
+	//rand.Seed(1)
+	//idxPerm := rand.Perm(nTr)
 	//cv folds data
 	trainFold := make([]cvFold, nFold)
 	testFold := make([]cvFold, nFold)
@@ -137,7 +137,7 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFe
 	for j := 0; j < len(lamda); j++ {
 		for i := 0; i < nFold; i++ {
 			//weights finalized for one lamda and one fold
-			weights := TrainRLS_Regress_CG(trainFold[i].X, trainFold[i].Y, lamda[j])
+			weights := TrainRLS_Regress_CG(trainFold[i].X, trainFold[i].Y, lamda[j], randValues)
 			term1 := mat64.NewDense(0, 0, nil)
 			term2 := mat64.NewDense(0, 0, nil)
 			//trXdata and tsXdata are "cbinded" previously in main
@@ -169,7 +169,7 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFe
 	for i := 0; i < nY; i++ {
 		Ymat.Set(i, 0, Y.At(i, 0))
 	}
-	beta = TrainRLS_Regress_CG(X, Ymat, regulazor)
+	beta = TrainRLS_Regress_CG(X, Ymat, regulazor, randValues)
 	return beta, regulazor, optMSE
 }
 
@@ -267,16 +267,24 @@ func deltaLossCal(Y *mat64.Dense, products *mat64.Dense, lamda float64, weights 
 	return deltaLoss
 }
 
-func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float64) (weights *mat64.Dense) {
+func RandListFromUniDist(length int) (values []float64) {
+	var UformDist = distuv.Uniform{Min: -0.0001, Max: 0.0001}
+	for k := 0; k < length; k++ {
+		value := UformDist.Rand()
+		values = append(values, value)
+	}
+	return values
+}
+func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float64, randValues []float64) (weights *mat64.Dense) {
 	n, p := trFoldX.Caps()
 	//weight
 	weights = mat64.NewDense(p, 1, nil)
 	preWeights := mat64.NewDense(p, 1, nil)
-	var UformDist = distuv.Uniform{Min: -0.0001, Max: 0.0001}
+	//rand.Seed(1)
 	for k := 0; k < p; k++ {
-		value := UformDist.Rand()
-		weights.Set(k, 0, value)
-		preWeights.Set(k, 0, value)
+		//value := UformDist.Rand()
+		weights.Set(k, 0, randValues[k])
+		preWeights.Set(k, 0, randValues[k])
 	}
 	//products and gradient
 	tmpData := make([]float64, 0)
