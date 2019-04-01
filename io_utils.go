@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"os"
 	"strconv"
@@ -82,4 +83,28 @@ func lcCount(filename string) (lc int, cc int, err error) {
 		lc++
 	}
 	return lc, cc, nil
+}
+
+func writeFile(outFile string, data *mat64.Dense) (err error) {
+	file, err := os.OpenFile(outFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer file.Close()
+	wr := bufio.NewWriterSize(file, 192000)
+	nRow, nCol := data.Caps()
+	var ele string
+	for i := 0; i < nRow; i++ {
+		ele = strconv.FormatFloat(data.At(i, 0), 'f', 6, 64)
+		wr.WriteString(ele)
+		for j := 1; j < nCol; j++ {
+			ele = strconv.FormatFloat(data.At(i, j), 'f', 6, 64)
+			wr.WriteString("\t")
+			wr.WriteString(ele)
+		}
+		wr.WriteString("\n")
+	}
+	wr.Flush()
+	return err
 }
