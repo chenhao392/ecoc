@@ -86,7 +86,7 @@ func lcCount(filename string) (lc int, cc int, err error) {
 }
 
 func writeFile(outFile string, data *mat64.Dense) (err error) {
-	file, err := os.OpenFile(outFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println(err)
 		return
