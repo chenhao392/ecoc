@@ -178,7 +178,7 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 	mutex.Lock()
 	sum := 0.0
 	for i := 0; i < nLabel; i++ {
-		f1 := computeF1_2(tsYdata.ColView(i), tsYhat.ColView(i))
+		f1 := computeF1_2(tsYdata.ColView(i), tsYhat.ColView(i), 0.001)
 		sumRes.Set(c, i, f1)
 		sum += f1
 		//fmt.Println(f1)

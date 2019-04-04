@@ -112,7 +112,7 @@ func computeF1(X *mat64.Dense, Y *mat64.Dense, beta *mat64.Dense) (F1 float64) {
 	return F1
 }
 
-func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector) (F1 float64) {
+func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64) {
 	n := Y.Len()
 	var tp int
 	var fp int
@@ -121,13 +121,13 @@ func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector) (F1 float64) {
 	for i := 0; i < n; i++ {
 		y := Y.At(i, 0)
 		yh := Yh.At(i, 0)
-		if y > 0 && yh >= 0.5 {
+		if y > 0 && yh >= thres {
 			tp += 1
-		} else if y <= 0 && yh >= 0.5 {
+		} else if y <= 0 && yh >= thres {
 			fp += 1
-		} else if y > 0 && yh < 0.5 {
+		} else if y > 0 && yh < thres {
 			fn += 1
-		} else if y <= 0 && yh < 0.5 {
+		} else if y <= 0 && yh < thres {
 			tn += 1
 		}
 	}
