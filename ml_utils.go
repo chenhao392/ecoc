@@ -4,6 +4,7 @@ import (
 	//"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
+	"sort"
 )
 
 //for cross validation
@@ -151,4 +152,55 @@ func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64) 
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
 	return F1
+}
+func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
+	type kv struct {
+		Key   int
+		Value float64
+	}
+	n := Y.Len()
+	mapY := make(map[int]int)
+	var sortYh []kv
+	for i := 0; i < n; i++ {
+		if Y.At(i, 0) == 1.0 {
+			mapY[i] = 1
+		}
+		ele := Yh.At(i, 0)
+		if math.IsNaN(ele) {
+			sortYh = append(sortYh, kv{i, 0.0})
+		} else {
+			sortYh = append(sortYh, kv{i, Yh.At(i, 0)})
+		}
+	}
+	sort.Slice(sortYh, func(i, j int) bool {
+		return sortYh[i].Value > sortYh[j].Value
+	})
+
+	all := 0.0
+	p := 0.0
+	tp := 0.0
+	total := float64(len(mapY))
+	prData := make([]float64, 0)
+	for _, kv := range sortYh {
+		//fmt.Println(kv.Key, kv.Value)
+		all += 1.0
+		p += 1.0
+		_, ok := mapY[kv.Key]
+		if ok {
+			tp += 1.0
+			pr := tp / p
+			re := tp / total
+			prData = append(prData, pr)
+			prData = append(prData, re)
+		}
+	}
+
+	aupr = 0.0
+	for i := 2; i < len(prData)-1; i += 2 {
+		//fmt.Println("AUPR:", aupr, prData[i-2], prData[i], prData[i+1], prData[i-1])
+		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
+	}
+	aupr = aupr / 2
+	//fmt.Println("AUPR: ", aupr)
+	return aupr
 }
