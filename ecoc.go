@@ -23,12 +23,13 @@ var mutex sync.Mutex
 
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "data/tsX.emo.txt", "testFeatureSet")
-	var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "testLabelSet")
-	var trX *string = flag.String("trX", "data/trX.emo.txt", "trainFeatureSet")
-	var trY *string = flag.String("trY", "data/trY.emo.txt", "trainLabelSet")
+	var tsX *string = flag.String("tsX", "data/tsX.emo.txt", "test FeatureSet")
+	var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "test LabelSet")
+	var trX *string = flag.String("trX", "data/trX.emo.txt", "train FeatureSet")
+	var trY *string = flag.String("trY", "data/trY.emo.txt", "train LabelSet")
 	var resFolder *string = flag.String("res", "resultEmo", "resultFolder")
 	var inThreads *int = flag.Int("p", 48, "number of threads")
+	var reg *bool = flag.Bool("r", false, "regularize CCA, default false")
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	sigmaFctsSet := []float64{0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5}
 	nFold := 5
@@ -82,16 +83,19 @@ func main() {
 	//pass Liblin
 	fmt.Println("pass step 1 coding\n")
 	//cca
-	var cca stat.CC
-	err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
-	if err != nil {
-		log.Fatal(err)
+	B := mat64.NewDense(0, 0, nil)
+	if !*reg {
+		var cca stat.CC
+		err := cca.CanonicalCorrelations(trXdataB, trYdata, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		B = cca.Right(nil, false)
+	} else {
+		//B is not the same with matlab code
+		//_, B = ccaProjectTwoMatrix(trXdataB, trYdata)
+		B = ccaProject(trXdataB, trYdata)
 	}
-	B := cca.Right(nil, false)
-
-	//skip as B is not the same with matlab code for debug
-	//_, B = ccaProjectTwoMatrix(trXdataB, trYdata)
-	//B = ccaProject(trXdataB, trYdata)
 	fmt.Println("pass step 2 cca coding\n")
 	//CCA code
 	trY_Cdata := mat64.NewDense(0, 0, nil)
@@ -120,7 +124,7 @@ func main() {
 	sumRes := mat64.NewDense(nL, nLabel, nil)
 	macroF1 := mat64.NewDense(nL, 3, nil)
 	//decoding and step 4
-	err = os.MkdirAll("./"+*resFolder, 0755)
+	err := os.MkdirAll("./"+*resFolder, 0755)
 	if err != nil {
 		fmt.Println(err)
 		return
