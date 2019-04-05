@@ -139,7 +139,7 @@ func ccaProjectTwoMatrix(X *mat64.Dense, Y *mat64.Dense) (W_x *mat64.Dense, W_y 
 func ccaProject(X *mat64.Dense, Y *mat64.Dense) (W_y *mat64.Dense) {
 	var Xsvd, Ysvd, Bsvd mat64.SVD
 	var uXFull, vXFull, uYFull, vYFull, pBFull mat64.Dense
-	Yreg := 0.0
+	Yreg := 0.5
 	//init SVD
 	ok := Xsvd.Factorize(X.T(), matrix.SVDThin)
 	if !ok {
