@@ -204,3 +204,66 @@ func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	//fmt.Println("AUPR: ", aupr)
 	return aupr
 }
+
+func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64) {
+	type kv struct {
+		Key   int
+		Value float64
+	}
+	n := Y.Len()
+	mapY := make(map[int]int)
+	var sortYh []kv
+	for i := 0; i < n; i++ {
+		if Y.At(i, 0) == 1.0 {
+			mapY[i] = 1
+		}
+		ele := Yh.At(i, 0)
+		if math.IsNaN(ele) {
+			sortYh = append(sortYh, kv{i, 0.0})
+		} else {
+			sortYh = append(sortYh, kv{i, Yh.At(i, 0)})
+		}
+	}
+	sort.Slice(sortYh, func(i, j int) bool {
+		return sortYh[i].Value > sortYh[j].Value
+	})
+	//o based index, thus -1
+	thres := sortYh[rankCut-1].Value
+	var tp int
+	var fp int
+	var fn int
+	var tn int
+	for i := 0; i < n; i++ {
+		y := Y.At(i, 0)
+		yh := Yh.At(i, 0)
+		if y > 0 && yh >= thres {
+			tp += 1
+		} else if y <= 0 && yh >= thres {
+			fp += 1
+		} else if y > 0 && yh < thres {
+			fn += 1
+		} else if y <= 0 && yh < thres {
+			tn += 1
+		}
+	}
+	var prec float64
+	var rec float64
+	//P and R
+	if tp+fp == 0 {
+		prec = 0
+	} else {
+		prec = float64(tp) / (float64(tp) + float64(fp))
+	}
+	if tp+fn == 0 {
+		rec = 0.5
+	} else {
+		rec = float64(tp) / (float64(tp) + float64(fn))
+	}
+	//F1
+	if prec+rec == 0 {
+		F1 = 0
+	} else {
+		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
+	}
+	return F1
+}

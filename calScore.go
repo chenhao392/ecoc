@@ -21,11 +21,11 @@ func main() {
 	//input argv
 	var tsY *string = flag.String("tsY", "data/tsY.txt", "testLabelSet")
 	var resFolder *string = flag.String("res", "resultECOC", "resultFolder")
-	var thres *float64 = flag.Float64("t", 0.001, "threshold for positive/negative classification for each label")
+	var rankCut *int = flag.Int("r", 3, "rank cut for positive/negative classification label")
 	flag.Parse()
 	runtime.GOMAXPROCS(5)
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	sigmaFctsSet := []float64{0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5}
+	sigmaFctsSet := []float64{0.05, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 16.0, 20.0}
 	//read data
 	tsYdata, _, _ := readFile(*tsY, false)
 	//vars
@@ -61,7 +61,7 @@ func main() {
 			//go function
 			//kSet[k]
 			//sigmaFctsSet[s]
-			go single_compute(tsYdata, kSet[k], sigmaFctsSet[s], sumResF1, macroF1, sumResAupr, meanAupr, nLabel, *thres, *resFolder, c)
+			go single_compute(tsYdata, kSet[k], sigmaFctsSet[s], sumResF1, macroF1, sumResAupr, meanAupr, nLabel, *rankCut, *resFolder, c)
 			c += 1
 		}
 	}
@@ -77,7 +77,7 @@ func main() {
 	os.Exit(0)
 }
 
-func single_compute(tsYdata *mat64.Dense, k int, sigmaFcts float64, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, meanAupr *mat64.Dense, nLabel int, thres float64, resFolder string, c int) {
+func single_compute(tsYdata *mat64.Dense, k int, sigmaFcts float64, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, meanAupr *mat64.Dense, nLabel int, rankCut int, resFolder string, c int) {
 	defer wg.Done()
 	sFctStr := strconv.FormatFloat(sigmaFcts, 'f', 3, 64)
 	kStr := strconv.FormatInt(int64(k), 16)
@@ -88,7 +88,7 @@ func single_compute(tsYdata *mat64.Dense, k int, sigmaFcts float64, sumResF1 *ma
 	sumF1 := 0.0
 	sumAupr := 0.0
 	for i := 0; i < nLabel; i++ {
-		f1 := computeF1_2(tsYdata.ColView(i), tsYhat.ColView(i), thres)
+		f1 := computeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
 		aupr := computeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
 		sumResF1.Set(c, i, f1)
 		sumResAupr.Set(c, i, aupr)

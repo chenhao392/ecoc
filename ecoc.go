@@ -29,11 +29,12 @@ func main() {
 	var trY *string = flag.String("trY", "data/trY.emo.txt", "train LabelSet")
 	var resFolder *string = flag.String("res", "resultEmo", "resultFolder")
 	var inThreads *int = flag.Int("p", 48, "number of threads")
+	var rankCut *int = flag.Int("c", 3, "rank cut (alpha) for F1 calculation")
 	var reg *bool = flag.Bool("r", false, "regularize CCA, default false")
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	sigmaFctsSet := []float64{0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5}
+	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,
+	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
 	nFold := 5
-	//var inThreads *int = flag.Int("p", 1, "number of threads")
 	flag.Parse()
 	rand.Seed(1)
 	runtime.GOMAXPROCS(*inThreads)
@@ -42,18 +43,17 @@ func main() {
 	tsYdata, _, _ := readFile(*tsY, false)
 	trXdata, _, _ := readFile(*trX, false)
 	trYdata, _, _ := readFile(*trY, false)
-	fmt.Println(trYdata)
 	//vars
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
 	_, nLabel := trYdata.Caps()
 	nRowTsY, _ := tsYdata.Caps()
+	if nFea < nLabel {
+		fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
+		os.Exit(0)
+	}
 	//CCA dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
-	//nComps := make([]int, minDims)
-	//for i := 0; i < len(nComps); i++ {
-	//	nComps[i] = i
-	//}
 	//tsY_prob
 	tsY_Prob := mat64.NewDense(nRowTsY, nLabel, nil)
 	//adding bias term for tsXData
@@ -121,8 +121,10 @@ func main() {
 	}
 	nL := nK * len(sigmaFctsSet)
 	c := 0
-	sumRes := mat64.NewDense(nL, nLabel, nil)
+	sumResF1 := mat64.NewDense(nL, nLabel, nil)
+	sumResAupr := mat64.NewDense(nL, nLabel, nil)
 	macroF1 := mat64.NewDense(nL, 3, nil)
+	meanAupr := mat64.NewDense(nL, 3, nil)
 	//decoding and step 4
 	err := os.MkdirAll("./"+*resFolder, 0755)
 	if err != nil {
@@ -134,36 +136,22 @@ func main() {
 	for k := 0; k < nK; k++ {
 		Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[k]))
 		for s := 0; s < len(sigmaFctsSet); s++ {
-			//go function
-			//kSet[k]
-			//sigmaFctsSet[s]
-			go single_IOC_MFADecoding_and_result(nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, sumRes, macroF1, tsYdata, *resFolder)
+			go single_IOC_MFADecoding_and_result(nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, sumResF1, macroF1, sumResAupr, meanAupr, tsYdata, *rankCut, *resFolder)
 			c += 1
 		}
 	}
 	wg.Wait()
 	oFile := "./" + *resFolder + "/sumRes.F1.txt"
-	writeFile(oFile, sumRes)
+	writeFile(oFile, sumResF1)
+	oFile = "./" + *resFolder + "/sumRes.AUPR.txt"
+	writeFile(oFile, sumResAupr)
 	oFile = "./" + *resFolder + "/sumRes.macroF1.txt"
 	writeFile(oFile, macroF1)
+	oFile = "./" + *resFolder + "/sumRes.meanAupr.txt"
+	writeFile(oFile, meanAupr)
 	os.Exit(0)
 }
-func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int) {
-	defer wg.Done()
-	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr, randValues, idxPerm)
-	mutex.Lock()
-	sigma.Set(0, i, math.Sqrt(optMSE))
-	//bias term for tsXdata added before
-	element := mat64.NewDense(0, 0, nil)
-	element.Mul(tsXdataB, beta)
-	for j := 0; j < nTs; j++ {
-		tsY_C.Set(j, i, element.At(j, 0))
-	}
-	//fmt.Println(i, lamda, sigma)
-	mutex.Unlock()
-}
-
-func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, sumRes *mat64.Dense, macroF1 *mat64.Dense, tsYdata *mat64.Dense, resFolder string) {
+func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, meanAupr *mat64.Dense, tsYdata *mat64.Dense, rankCut int, resFolder string) {
 	defer wg.Done()
 	tsYhat := mat64.NewDense(nTs, nLabel, nil)
 	for i := 0; i < nTs; i++ {
@@ -180,15 +168,35 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 	writeFile(oFile, tsYhat)
 	//F1 score
 	mutex.Lock()
-	sum := 0.0
+	sumF1 := 0.0
+	sumAupr := 0.0
 	for i := 0; i < nLabel; i++ {
-		f1 := computeF1_2(tsYdata.ColView(i), tsYhat.ColView(i), 0.001)
-		sumRes.Set(c, i, f1)
-		sum += f1
-		//fmt.Println(f1)
+		f1 := computeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
+		aupr := computeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		sumResF1.Set(c, i, f1)
+		sumResAupr.Set(c, i, aupr)
+		sumF1 += f1
+		sumAupr += aupr
 	}
 	macroF1.Set(c, 0, float64(k))
 	macroF1.Set(c, 1, sigmaFcts)
-	macroF1.Set(c, 2, sum/float64(nLabel))
+	macroF1.Set(c, 2, sumF1/float64(nLabel))
+	meanAupr.Set(c, 0, float64(k))
+	meanAupr.Set(c, 1, sigmaFcts)
+	meanAupr.Set(c, 2, sumAupr/float64(nLabel))
+	mutex.Unlock()
+}
+func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int) {
+	defer wg.Done()
+	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr, randValues, idxPerm)
+	mutex.Lock()
+	sigma.Set(0, i, math.Sqrt(optMSE))
+	//bias term for tsXdata added before
+	element := mat64.NewDense(0, 0, nil)
+	element.Mul(tsXdataB, beta)
+	for j := 0; j < nTs; j++ {
+		tsY_C.Set(j, i, element.At(j, 0))
+	}
+	//fmt.Println(i, lamda, sigma)
 	mutex.Unlock()
 }
