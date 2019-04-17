@@ -4,6 +4,7 @@ import (
 	//"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
+	"math/rand"
 	"sort"
 )
 
@@ -37,6 +38,101 @@ func (f *cvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Ve
 		f.X.SetRow(i, matX.RawRowView(idxArr[i]))
 		f.Y.Set(i, 0, vecY.At(idxArr[i], 0))
 	}
+}
+func Shift(pToSlice *[]string) string {
+	sValue := (*pToSlice)[0]
+	*pToSlice = (*pToSlice)[1:len(*pToSlice)]
+	return sValue
+}
+
+func Pop(pToSlice *[]float64) float64 {
+	pValue := (*pToSlice)[len(*pToSlice)-1]
+	*pToSlice = (*pToSlice)[0 : len(*pToSlice)-1]
+	return pValue
+}
+
+//only row stacking available in mat64, the matlab code use "cbind"
+func colStack(X *mat64.Dense, oneSlice []float64) (X2 *mat64.Dense) {
+	X = mat64.DenseCopyOf(X.T())
+	_, n := X.Caps()
+	ones := mat64.DenseCopyOf(mat64.NewDense(1, n, oneSlice))
+	X2 = mat64.NewDense(0, 0, nil)
+	X2.Stack(ones, X)
+	X2 = mat64.DenseCopyOf(X2.T())
+	return X2
+}
+
+func posFilter(trYdata *mat64.Dense) (colSum *mat64.Vector, trYdataFilter *mat64.Dense) {
+	r, c := trYdata.Caps()
+	colSum = mat64.NewVector(c, nil)
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			colSum.SetVec(j, colSum.At(j, 0)+trYdata.At(i, j))
+		}
+	}
+	nCol := 0
+	for j := 0; j < c; j++ {
+		if colSum.At(j, 0) >= 1.0 {
+			colSum.SetVec(j, 1.0)
+			nCol += 1
+		}
+	}
+	trYdataFilter = mat64.NewDense(r, nCol, nil)
+	tC := 0
+	for j := 0; j < c; j++ {
+		if colSum.At(j, 0) == 1.0 {
+			for i := 0; i < r; i++ {
+				trYdataFilter.Set(i, tC, trYdata.At(i, j))
+			}
+			tC += 1
+		}
+	}
+	return colSum, trYdataFilter
+}
+
+func posSelect(tsYdata *mat64.Dense, colSum *mat64.Vector) (tsYdataFilter *mat64.Dense) {
+	r, c := tsYdata.Caps()
+	nCol := 0
+	for j := 0; j < c; j++ {
+		if colSum.At(j, 0) == 1.0 {
+			nCol += 1
+		}
+	}
+	tsYdataFilter = mat64.NewDense(r, nCol, nil)
+	tC := 0
+	for j := 0; j < c; j++ {
+		if colSum.At(j, 0) == 1.0 {
+			for i := 0; i < r; i++ {
+				tsYdataFilter.Set(i, tC, tsYdata.At(i, j))
+			}
+			tC += 1
+		}
+	}
+	return tsYdataFilter
+}
+
+func cvSplit(nElement int, nFold int) (cvSet map[int][]int) {
+	//rand.Seed(2)
+	cvSet = make(map[int][]int)
+	idxPerm := rand.Perm(nElement)
+	j := 0
+	if nElement >= nFold {
+		for i := 0; i < nElement; i++ {
+			j = i % nFold
+			cvSet[j] = append(cvSet[j], idxPerm[i])
+		}
+	} else {
+		nDiff := nFold - nElement
+		for i := 0; i < nDiff; i++ {
+			idxPermTemp := rand.Perm(nElement)
+			idxPerm = append(idxPerm, idxPermTemp[0])
+		}
+		for i := 0; i < nElement; i++ {
+			j = i % nFold
+			cvSet[j] = append(cvSet[j], idxPerm[i])
+		}
+	}
+	return cvSet
 }
 
 func minIdx(inArray []float64) (idx int) {

@@ -32,7 +32,7 @@ func main() {
 	var rankCut *int = flag.Int("c", 3, "rank cut (alpha) for F1 calculation")
 	var reg *bool = flag.Bool("r", false, "regularize CCA, default false")
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,
+	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1 and rev
 	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
 	nFold := 5
 	flag.Parse()
@@ -43,6 +43,9 @@ func main() {
 	tsYdata, _, _ := readFile(*tsY, false)
 	trXdata, _, _ := readFile(*trX, false)
 	trYdata, _, _ := readFile(*trY, false)
+
+	colSum, trYdata := posFilter(trYdata)
+	tsYdata = posSelect(tsYdata, colSum)
 	//vars
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
