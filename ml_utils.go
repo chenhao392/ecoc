@@ -39,6 +39,17 @@ func (f *cvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Ve
 		f.Y.Set(i, 0, vecY.At(idxArr[i], 0))
 	}
 }
+func (f *cvFold) setXYinNestedTraining(idxArr []int, matX *mat64.Dense, matY *mat64.Dense) {
+	_, nColX := matX.Caps()
+	_, nColY := matY.Caps()
+	nRow := len(idxArr)
+	f.X = mat64.NewDense(nRow, nColX, nil)
+	f.Y = mat64.NewDense(nRow, nColY, nil)
+	for i := 0; i < nRow; i++ {
+		f.X.SetRow(i, matX.RawRowView(idxArr[i]))
+		f.Y.SetRow(i, matY.RawRowView(idxArr[i]))
+	}
+}
 func Shift(pToSlice *[]string) string {
 	sValue := (*pToSlice)[0]
 	*pToSlice = (*pToSlice)[1:len(*pToSlice)]

@@ -13,13 +13,19 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	//"strconv"
+	"sort"
+	"strconv"
 	"sync"
 	//"unsafe"
 )
 
 var wg sync.WaitGroup
 var mutex sync.Mutex
+
+type kv struct {
+	Key   int
+	Value float64
+}
 
 func main() {
 	//input argv
@@ -46,8 +52,36 @@ func main() {
 
 	_, nFea := trXdata.Caps()
 	//nTs, _ := tsXdata.Caps()
-	_, nLabel := trYdata.Caps()
+	nTr, nLabel := trYdata.Caps()
 	//nRowTsY, _ := tsYdata.Caps()
+	if nFea < nLabel {
+		fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
+		os.Exit(0)
+	}
+	//split training data for nested cv
+	idxPerm := rand.Perm(nTr)
+	trainFold := make([]cvFold, nFold)
+	testFold := make([]cvFold, nFold)
+
+	for i := 0; i < nFold; i++ {
+		cvTrain := make([]int, 0)
+		cvTest := make([]int, 0)
+		cvTestMap := map[int]int{}
+		for j := i * nTr / nFold; j < (i+1)*nTr/nFold-1; j++ {
+			cvTest = append(cvTest, idxPerm[j])
+			cvTestMap[idxPerm[j]] = idxPerm[j]
+		}
+		//the rest is for training
+		for j := 0; j < nTr; j++ {
+			_, exist := cvTestMap[j]
+			if !exist {
+				cvTrain = append(cvTrain, j)
+			}
+		}
+		trainFold[i].setXYinNestedTraining(cvTrain, trXdata, trYdata)
+		testFold[i].setXYinNestedTraining(cvTest, trXdata, trYdata)
+	}
+
 	//min dims
 	//potential bug when cv set's minDims is smaller
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
@@ -60,31 +94,69 @@ func main() {
 	}
 	//measures
 	nL := nK * len(sigmaFctsSet)
-	sumResF1 := mat64.NewDense(nL, nLabel, nil)
-	sumResAupr := mat64.NewDense(nL, nLabel, nil)
-	macroF1 := mat64.NewDense(nL, 3, nil)
-	meanAupr := mat64.NewDense(nL, 3, nil)
+	sumResF1 := mat64.NewDense(1, nLabel, nil)
+	sumResAupr := mat64.NewDense(1, nLabel, nil)
+	macroF1 := mat64.NewDense(nL, 4, nil)
+	meanAupr := mat64.NewDense(nL, 4, nil)
+	testMacroF1 := mat64.NewDense(1, 3, nil)
+	testMeanAupr := mat64.NewDense(1, 3, nil)
 	//out dir
 	err := os.MkdirAll("./"+*resFolder, 0755)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	for i := 0; i < nFold; i++ {
+		ecocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, macroF1, meanAupr, nFold, nK, *resFolder, false, true)
+	}
+	//sort by meanAupr
+	n, _ := meanAupr.Caps()
+	var sortMap []kv
+	for i := 0; i < n; i++ {
+		sortMap = append(sortMap, kv{i, meanAupr.At(i, 3) / meanAupr.At(i, 2)})
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value > sortMap[j].Value
+	})
+	//best training aupr
+	cBest := sortMap[0].Key
+	kSet = []int{int(meanAupr.At(cBest, 0))}
+	sigmaFctsSet = []float64{meanAupr.At(cBest, 1)}
+	ecocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, macroF1, meanAupr, nFold, nK, *resFolder, true, false)
+	//corresponding testing aupr and F1
+	sumAupr := 0.0
+	sumF1 := 0.0
+	for i := 0; i < nLabel; i++ {
+		sumAupr += sumResAupr.At(0, i)
+		sumF1 += sumResF1.At(0, i)
+	}
+	testMacroF1.Set(0, 0, float64(meanAupr.At(cBest, 0)))
+	testMacroF1.Set(0, 1, float64(meanAupr.At(cBest, 1)))
+	testMacroF1.Set(0, 2, sumF1/float64(nLabel))
+	testMeanAupr.Set(0, 0, float64(meanAupr.At(cBest, 0)))
+	testMeanAupr.Set(0, 1, float64(meanAupr.At(cBest, 1)))
+	testMeanAupr.Set(0, 2, sumAupr/float64(nLabel))
+	//result file. note: per gene result is written in single_IOC_MFADecoding_and_result func, controlled by isGridSearch bool
 
-	ecocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, macroF1, meanAupr, nFold, nK, true)
-
-	oFile := "./" + *resFolder + "/sumRes.F1.txt"
+	oFile := "./" + *resFolder + "/testing.F1.txt"
 	writeFile(oFile, sumResF1)
-	oFile = "./" + *resFolder + "/sumRes.AUPR.txt"
+	oFile = "./" + *resFolder + "/testing.AUPR.txt"
 	writeFile(oFile, sumResAupr)
-	oFile = "./" + *resFolder + "/sumRes.macroF1.txt"
+	oFile = "./" + *resFolder + "/cvTraining.macroF1.txt"
 	writeFile(oFile, macroF1)
-	oFile = "./" + *resFolder + "/sumRes.meanAupr.txt"
+	oFile = "./" + *resFolder + "/cvTraining.meanAupr.txt"
 	writeFile(oFile, meanAupr)
+	oFile = "./" + *resFolder + "/cvTesting.macroF1.txt"
+	writeFile(oFile, testMacroF1)
+	oFile = "./" + *resFolder + "/cvTesting.meanAupr.txt"
+	writeFile(oFile, testMeanAupr)
 	os.Exit(0)
 }
-func single_IOC_MFADecoding_and_result(outPerLabel bool, nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, meanAupr *mat64.Dense, tsYdata *mat64.Dense, rankCut int) {
+func single_IOC_MFADecoding_and_result(outPerLabel bool, isGridSearch bool, nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, meanAupr *mat64.Dense, tsYdata *mat64.Dense, rankCut int, minDims int, resFolder string) {
 	defer wg.Done()
+	if k >= minDims {
+		return
+	}
 	tsYhat := mat64.NewDense(nTs, nLabel, nil)
 	for i := 0; i < nTs; i++ {
 		//the doc seems to be old, (0,x] seems to be correct
@@ -94,11 +166,13 @@ func single_IOC_MFADecoding_and_result(outPerLabel bool, nTs int, k int, c int, 
 		arr := IOC_MFADecoding(nTs, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
 		tsYhat.SetRow(i, arr)
 	}
-	//sFctStr := strconv.FormatFloat(sigmaFcts, 'f', 3, 64)
-	//kStr := strconv.FormatInt(int64(k), 16)
-	//oFile := "./" + resFolder + "/k" + kStr + "sFct" + sFctStr + ".txt"
-	//writeFile(oFile, tsYhat)
-	//F1 score
+	if !isGridSearch {
+		sFctStr := strconv.FormatFloat(sigmaFcts, 'f', 3, 64)
+		kStr := strconv.FormatInt(int64(k), 16)
+		oFile := "./" + resFolder + "/k" + kStr + "sFct" + sFctStr + ".txt"
+		writeFile(oFile, tsYhat)
+	}
+	//score
 	mutex.Lock()
 	sumF1 := 0.0
 	sumAupr := 0.0
@@ -112,12 +186,16 @@ func single_IOC_MFADecoding_and_result(outPerLabel bool, nTs int, k int, c int, 
 		sumF1 += f1
 		sumAupr += aupr
 	}
-	macroF1.Set(c, 0, float64(k))
-	macroF1.Set(c, 1, sigmaFcts)
-	macroF1.Set(c, 2, sumF1/float64(nLabel)+macroF1.At(c, 2))
-	meanAupr.Set(c, 0, float64(k))
-	meanAupr.Set(c, 1, sigmaFcts)
-	meanAupr.Set(c, 2, sumAupr/float64(nLabel)+meanAupr.At(c, 2))
+	if isGridSearch {
+		macroF1.Set(c, 0, float64(k))
+		macroF1.Set(c, 1, sigmaFcts)
+		macroF1.Set(c, 2, macroF1.At(c, 2)+1.0)
+		macroF1.Set(c, 3, sumF1/float64(nLabel)+macroF1.At(c, 3))
+		meanAupr.Set(c, 0, float64(k))
+		meanAupr.Set(c, 1, sigmaFcts)
+		meanAupr.Set(c, 2, meanAupr.At(c, 2)+1.0)
+		meanAupr.Set(c, 3, sumAupr/float64(nLabel)+meanAupr.At(c, 3))
+	}
 	mutex.Unlock()
 }
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int) {
@@ -135,7 +213,7 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int,
 	mutex.Unlock()
 }
 
-func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut *int, reg *bool, kSet []int, sigmaFctsSet []float64, sumResF1 *mat64.Dense, sumResAupr *mat64.Dense, macroF1 *mat64.Dense, meanAupr *mat64.Dense, nFold int, nK int, outPerLabel bool) (err error) {
+func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut *int, reg *bool, kSet []int, sigmaFctsSet []float64, sumResF1 *mat64.Dense, sumResAupr *mat64.Dense, macroF1 *mat64.Dense, meanAupr *mat64.Dense, nFold int, nK int, resFolder string, outPerLabel bool, isGridSearch bool) (err error) {
 	colSum, trYdata := posFilter(trYdata)
 	tsYdata = posSelect(tsYdata, colSum)
 	//vars
@@ -143,10 +221,11 @@ func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	nTs, _ := tsXdata.Caps()
 	_, nLabel := trYdata.Caps()
 	nRowTsY, _ := tsYdata.Caps()
-
+	//min dims
+	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
 		fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
-		os.Exit(0)
+		return nil
 	}
 
 	//tsY_prob
@@ -210,14 +289,21 @@ func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	fmt.Println("pass step 3 cg decoding\n")
 	//decoding and step 4
 	c := 0
-	wg.Add(nK * len(sigmaFctsSet))
-	for k := 0; k < nK; k++ {
-		Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[k]))
-		for s := 0; s < len(sigmaFctsSet); s++ {
-			go single_IOC_MFADecoding_and_result(outPerLabel, nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, sumResF1, macroF1, sumResAupr, meanAupr, tsYdata, *rankCut)
-			c += 1
+	if isGridSearch {
+		wg.Add(nK * len(sigmaFctsSet))
+		for k := 0; k < nK; k++ {
+			Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[k]))
+			for s := 0; s < len(sigmaFctsSet); s++ {
+				go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, sumResF1, macroF1, sumResAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
+				c += 1
+			}
 		}
+	} else {
+		wg.Add(1)
+		Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[0]))
+		go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[0], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[0], nLabel, sumResF1, macroF1, sumResAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
+
 	}
 	wg.Wait()
-	return err
+	return nil
 }
