@@ -40,7 +40,7 @@ func main() {
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1 and rev
 	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
-	nFold := 5
+	nFold := 2
 	flag.Parse()
 	rand.Seed(1)
 	runtime.GOMAXPROCS(*inThreads)
@@ -111,9 +111,11 @@ func main() {
 	}
 	//sort by meanAupr
 	n, _ := meanAupr.Caps()
+	//n, _ := macroF1.Caps()
 	var sortMap []kv
 	for i := 0; i < n; i++ {
 		sortMap = append(sortMap, kv{i, meanAupr.At(i, 3) / meanAupr.At(i, 2)})
+		//sortMap = append(sortMap, kv{i, macroF1.At(i, 3) / macroF1.At(i, 2)})
 	}
 	sort.Slice(sortMap, func(i, j int) bool {
 		return sortMap[i].Value > sortMap[j].Value

@@ -9,6 +9,71 @@ import (
 	"strings"
 )
 
+func readNetwork(inNetworkFile string) (network *mat64.Dense, idIdx map[string]int) {
+	idIdx, nID := idIdxGen(inNetworkFile)
+	network = mat64.NewDense(nID, nID, nil)
+	//file
+	file, err := os.Open(inNetworkFile)
+	if err != nil {
+		return
+	}
+	//load
+	br := bufio.NewReaderSize(file, 32768000)
+	for {
+		line, isPrefix, err := br.ReadLine()
+		if err != nil {
+			break
+		}
+		if isPrefix {
+			return
+		}
+
+		str := string(line)
+		elements := strings.Split(str, "\t")
+		a := idIdx[elements[0]]
+		b := idIdx[elements[1]]
+		v, _ := strconv.ParseFloat(elements[2], 64)
+		network.Set(a, b, v)
+		network.Set(b, a, v)
+	}
+	return network, idIdx
+}
+func idIdxGen(inNetworkFile string) (idIdx map[string]int, count int) {
+	idIdx = make(map[string]int)
+	//file
+	file, err := os.Open(inNetworkFile)
+	if err != nil {
+		return
+	}
+	//load
+	br := bufio.NewReaderSize(file, 32768000)
+	count = 0
+	for {
+		line, isPrefix, err := br.ReadLine()
+		if err != nil {
+			break
+		}
+		if isPrefix {
+			return
+		}
+
+		str := string(line)
+		elements := strings.Split(str, "\t")
+		for c, id := range elements {
+			if c < 2 {
+				_, exist := idIdx[id]
+				if !exist {
+					idIdx[id] = count
+					count += 1
+				}
+			}
+		}
+	}
+	//count +1, so that it is number of unique IDs
+	count += 1
+	return idIdx, count
+}
+
 func readFile(inFile string, rowName bool) (dataR *mat64.Dense, rName []string, err error) {
 	//init
 	lc, cc, _ := lcCount(inFile)
