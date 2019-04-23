@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-func readNetwork(inNetworkFile string) (network *mat64.Dense, idIdx map[string]int) {
-	idIdx, nID := idIdxGen(inNetworkFile)
+func readNetwork(inNetworkFile string) (network *mat64.Dense, idIdx map[string]int, idxToId map[int]string) {
+	idIdx, idxToId, nID := idIdxGen(inNetworkFile)
 	network = mat64.NewDense(nID, nID, nil)
 	//file
 	file, err := os.Open(inNetworkFile)
@@ -36,10 +36,11 @@ func readNetwork(inNetworkFile string) (network *mat64.Dense, idIdx map[string]i
 		network.Set(a, b, v)
 		network.Set(b, a, v)
 	}
-	return network, idIdx
+	return network, idIdx, idxToId
 }
-func idIdxGen(inNetworkFile string) (idIdx map[string]int, count int) {
+func idIdxGen(inNetworkFile string) (idIdx map[string]int, idxToId map[int]string, count int) {
 	idIdx = make(map[string]int)
+	idxToId = make(map[int]string)
 	//file
 	file, err := os.Open(inNetworkFile)
 	if err != nil {
@@ -64,6 +65,7 @@ func idIdxGen(inNetworkFile string) (idIdx map[string]int, count int) {
 				_, exist := idIdx[id]
 				if !exist {
 					idIdx[id] = count
+					idxToId[count] = id
 					count += 1
 				}
 			}
@@ -71,7 +73,7 @@ func idIdxGen(inNetworkFile string) (idIdx map[string]int, count int) {
 	}
 	//count +1, so that it is number of unique IDs
 	count += 1
-	return idIdx, count
+	return idIdx, idxToId, count
 }
 
 func readFile(inFile string, rowName bool) (dataR *mat64.Dense, rName []string, err error) {

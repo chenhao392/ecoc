@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 )
@@ -29,12 +28,12 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 		restart.Set(i, 0, inPrior.At(i, 0)/sum)
 		prior.Set(i, 0, inPrior.At(i, 0)/sum)
 	}
-	thres := 1e-5
+	thres := 0.00001
 	maxIter := 1000
 	i := 0
 	res := 1.0
 	for res > thres && i < maxIter {
-		prePrior := prior
+		prePrior := mat64.DenseCopyOf(prior)
 		term1 := mat64.NewDense(0, 0, nil)
 		term1.Mul(network, prior)
 		for i := 0; i < r; i++ {
@@ -46,6 +45,5 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 		}
 		i += 1
 	}
-	fmt.Println(i, res)
 	return prior
 }
