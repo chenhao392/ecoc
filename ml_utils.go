@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"fmt"
+	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 	"math/rand"
@@ -69,6 +69,17 @@ func colStack(X *mat64.Dense, oneSlice []float64) (X2 *mat64.Dense) {
 	ones := mat64.DenseCopyOf(mat64.NewDense(1, n, oneSlice))
 	X2 = mat64.NewDense(0, 0, nil)
 	X2.Stack(ones, X)
+	X2 = mat64.DenseCopyOf(X2.T())
+	return X2
+}
+
+func colStackMatrix(X *mat64.Dense, addX *mat64.Dense) (X2 *mat64.Dense) {
+	X = mat64.DenseCopyOf(X.T())
+	X2 = mat64.NewDense(0, 0, nil)
+	a, b := X.Caps()
+	c, d := addX.Caps()
+	fmt.Println(a, b, d, c)
+	X2.Stack(addX.T(), X)
 	X2 = mat64.DenseCopyOf(X2.T())
 	return X2
 }

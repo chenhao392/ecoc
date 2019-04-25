@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	//"unsafe"
 )
@@ -29,26 +30,91 @@ type kv struct {
 
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "data/tsX.emo.txt", "test FeatureSet")
-	var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "test LabelSet")
-	var trX *string = flag.String("trX", "data/trX.emo.txt", "train FeatureSet")
-	var trY *string = flag.String("trY", "data/trY.emo.txt", "train LabelSet")
+	var tsX *string = flag.String("tsX", "", "test FeatureSet")
+	var tsY *string = flag.String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
+	var trX *string = flag.String("trX", "", "train FeatureSet")
+	var trY *string = flag.String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
+	var inNetworkFiles *string = flag.String("n", "data/hs_fus_net.txt,data/hs_pp_net.txt", "network file")
+	var priorMatrixFiles *string = flag.String("p", "data/human.bp.level1.set1.trMatrix.txt", "prior/known gene file")
 	var resFolder *string = flag.String("res", "resultEmo", "resultFolder")
-	var inThreads *int = flag.Int("p", 48, "number of threads")
+	var inThreads *int = flag.Int("t", 48, "number of threads")
 	var rankCut *int = flag.Int("c", 3, "rank cut (alpha) for F1 calculation")
 	var reg *bool = flag.Bool("r", false, "regularize CCA, default false")
+	flag.Parse()
+	if *priorMatrixFiles != "" && *inNetworkFiles != "" {
+		fmt.Println("prior file and network file argv defined. Generating ECOC codeword on the fly.")
+	} else if *tsX != "" && *trX != "" {
+		fmt.Println("Defined tsX and trX argv found. Using these ECOC codeword.")
+	} else {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1 and rev
 	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
 	nFold := 2
-	flag.Parse()
 	rand.Seed(1)
 	runtime.GOMAXPROCS(*inThreads)
 	//read data
-	tsXdata, _, _, _ := readFile(*tsX, false, false)
-	tsYdata, _, _, _ := readFile(*tsY, false, false)
-	trXdata, _, _, _ := readFile(*trX, false, false)
-	trYdata, _, _, _ := readFile(*trY, false, false)
+	tsYdata, tsRowName, _, _ := readFile(*tsY, true, true)
+	trYdata, trRowName, _, _ := readFile(*trY, true, true)
+	tsXdata := mat64.NewDense(0, 0, nil)
+	trXdata := mat64.NewDense(0, 0, nil)
+	if *priorMatrixFiles == "" && *inNetworkFiles == "" {
+		tsXdata, _, _, _ = readFile(*tsX, true, true)
+		trXdata, _, _, _ = readFile(*trX, true, true)
+	} else if *tsX == "" && *trX == "" {
+		inNetworkFile := strings.Split(*inNetworkFiles, ",")
+		priorMatrixFile := strings.Split(*priorMatrixFiles, ",")
+		// for filtering prior genes, only those in training set are used for propagation
+		trGeneMap := make(map[string]int)
+		for i := 0; i < len(trRowName); i++ {
+			trGeneMap[trRowName[i]] = i
+		}
+		for i := 0; i < len(inNetworkFile); i++ {
+			for j := 0; j < len(priorMatrixFile); j++ {
+				//idIdx as gene -> idx in net
+				network, idIdx, _ := readNetwork(inNetworkFile[i])
+				//network, idIdx, idxToId := readNetwork(*inNetworkFile)
+				//idArr  gene index as in prior file
+				priorData, idArr, _, _ := readFile(priorMatrixFile[j], true, true)
+				sPriorData := propagateSet(network, priorData, idIdx, idArr, trGeneMap)
+				_, nLabel := sPriorData.Caps()
+				tmpTsXdata := mat64.NewDense(len(tsRowName), nLabel, nil)
+				tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
+				//tsX
+				for k := 0; k < len(tsRowName); k++ {
+					for l := 0; l < nLabel; l++ {
+						_, exist := idIdx[tsRowName[k]]
+						if exist {
+							tmpTsXdata.Set(k, l, sPriorData.At(idIdx[tsRowName[k]], l))
+						}
+					}
+				}
+				nRow, _ := tsXdata.Caps()
+				if nRow == 0 {
+					tsXdata = tmpTsXdata
+				} else {
+					tsXdata = colStackMatrix(tsXdata, tmpTsXdata)
+				}
+				//trX
+				for k := 0; k < len(trRowName); k++ {
+					for l := 0; l < nLabel; l++ {
+						_, exist := idIdx[trRowName[k]]
+						if exist {
+							tmpTrXdata.Set(k, l, sPriorData.At(idIdx[trRowName[k]], l))
+						}
+					}
+				}
+				nRow, _ = trXdata.Caps()
+				if nRow == 0 {
+					trXdata = tmpTrXdata
+				} else {
+					trXdata = colStackMatrix(trXdata, tmpTrXdata)
+				}
+			}
+		}
+	}
 
 	_, nFea := trXdata.Caps()
 	//nTs, _ := tsXdata.Caps()
@@ -78,8 +144,51 @@ func main() {
 				cvTrain = append(cvTrain, j)
 			}
 		}
-		trainFold[i].setXYinNestedTraining(cvTrain, trXdata, trYdata)
-		testFold[i].setXYinNestedTraining(cvTest, trXdata, trYdata)
+		//generating ECOC
+		if *tsX == "" && *trX == "" {
+			inNetworkFile := strings.Split(*inNetworkFiles, ",")
+			priorMatrixFile := strings.Split(*priorMatrixFiles, ",")
+			//trXdataCV should use genes in trYdata for training only
+			trGeneMapCV := make(map[string]int)
+			for j := 0; j < len(cvTrain); j++ {
+				trGeneMapCV[trRowName[cvTrain[j]]] = cvTrain[j]
+			}
+			trXdataCV := mat64.NewDense(0, 0, nil)
+			//codes
+			for i := 0; i < len(inNetworkFile); i++ {
+				for j := 0; j < len(priorMatrixFile); j++ {
+					//idIdx as gene -> idx in net
+					network, idIdx, _ := readNetwork(inNetworkFile[i])
+					//network, idIdx, idxToId := readNetwork(*inNetworkFile)
+					//idArr  gene index as in prior file
+					priorData, idArr, _, _ := readFile(priorMatrixFile[j], true, true)
+					sPriorData := propagateSet(network, priorData, idIdx, idArr, trGeneMapCV)
+					_, nLabel := sPriorData.Caps()
+					tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
+					//trX
+					for k := 0; k < len(trRowName); k++ {
+						for l := 0; l < nLabel; l++ {
+							_, exist := idIdx[trRowName[k]]
+							if exist {
+								tmpTrXdata.Set(k, l, sPriorData.At(idIdx[trRowName[k]], l))
+							}
+						}
+					}
+					nRow, _ := trXdataCV.Caps()
+					if nRow == 0 {
+						trXdataCV = tmpTrXdata
+					} else {
+						trXdataCV = colStackMatrix(trXdataCV, tmpTrXdata)
+					}
+				}
+			}
+
+			trainFold[i].setXYinNestedTraining(cvTrain, trXdataCV, trYdata)
+			testFold[i].setXYinNestedTraining(cvTest, trXdataCV, trYdata)
+		} else {
+			trainFold[i].setXYinNestedTraining(cvTrain, trXdata, trYdata)
+			testFold[i].setXYinNestedTraining(cvTest, trXdata, trYdata)
+		}
 	}
 
 	//min dims

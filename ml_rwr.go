@@ -19,7 +19,7 @@ func colNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	return normNet, n
 }
 
-func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string]int, idArr []string) (sPriorData *mat64.Dense) {
+func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int) (sPriorData *mat64.Dense) {
 	network, nNetworkGene := colNorm(network)
 	nPriorGene, nPriorLabel := priorData.Caps()
 	//ind for prior/label gene set mapping at least one gene to the network
@@ -27,7 +27,8 @@ func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string
 	for j := 0; j < nPriorLabel; j++ {
 		for i := 0; i < nPriorGene; i++ {
 			_, exist := idIdx[idArr[i]]
-			if priorData.At(i, j) > 0 && exist {
+			_, existTr := trGeneMap[idArr[i]]
+			if priorData.At(i, j) > 0 && exist && existTr {
 				ind[j] += 1
 			}
 		}
@@ -45,12 +46,13 @@ func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string
 			prior := mat64.NewDense(nNetworkGene, 1, nil)
 			for i := 0; i < nPriorGene; i++ {
 				_, exist := idIdx[idArr[i]]
-				if priorData.At(i, j) > 0 && exist {
+				_, existTr := trGeneMap[idArr[i]]
+				if priorData.At(i, j) > 0 && exist && existTr {
 					prior.Set(idIdx[idArr[i]], 0, priorData.At(i, j))
 				}
 			}
 			//n by 1 matrix
-			sPrior := propagate(network, 0.3, prior)
+			sPrior := propagate(network, 0.6, prior)
 			for i := 0; i < nNetworkGene; i++ {
 				sPriorData.Set(i, c, sPrior.At(i, 0))
 			}
@@ -69,7 +71,7 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 		restart.Set(i, 0, inPrior.At(i, 0)/sum)
 		prior.Set(i, 0, inPrior.At(i, 0)/sum)
 	}
-	thres := 0.00001
+	thres := 0.0000000001
 	maxIter := 1000
 	i := 0
 	res := 1.0
