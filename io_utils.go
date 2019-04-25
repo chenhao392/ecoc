@@ -76,14 +76,18 @@ func idIdxGen(inNetworkFile string) (idIdx map[string]int, idxToId map[int]strin
 	return idIdx, idxToId, count
 }
 
-func readFile(inFile string, rowName bool) (dataR *mat64.Dense, rName []string, err error) {
+func readFile(inFile string, rowName bool, colName bool) (dataR *mat64.Dense, rName []string, cName []string, err error) {
 	//init
 	lc, cc, _ := lcCount(inFile)
 	if rowName {
 		cc -= 1
 	}
+	if colName {
+		lc -= 1
+	}
 	data := mat64.NewDense(lc, cc, nil)
 	rName = make([]string, 0)
+	cName = make([]string, 0)
 
 	//file
 	file, err := os.Open(inFile)
@@ -95,6 +99,7 @@ func readFile(inFile string, rowName bool) (dataR *mat64.Dense, rName []string, 
 	//load
 	br := bufio.NewReaderSize(file, 32768000)
 	r := 0
+	touchCol := false
 	for {
 		line, isPrefix, err1 := br.ReadLine()
 		if err1 != nil {
@@ -110,13 +115,23 @@ func readFile(inFile string, rowName bool) (dataR *mat64.Dense, rName []string, 
 			value := Shift(&elements)
 			rName = append(rName, value)
 		}
-		for c, i := range elements {
-			j, _ := strconv.ParseFloat(i, 64)
-			data.Set(r, c, j)
+		//first element shifted if rowName is true
+		if colName && !touchCol {
+			cName = elements
+			touchCol = true
+		} else {
+			for c, i := range elements {
+				j, _ := strconv.ParseFloat(i, 64)
+				data.Set(r, c, j)
+			}
+			r++
 		}
-		r++
 	}
-	return data, rName, nil
+	//shfit first rowName away if colName exist
+	if colName {
+		Shift(&rName)
+	}
+	return data, rName, cName, nil
 }
 
 //line count(nRow) and column count(nCol) for a tab separeted txt

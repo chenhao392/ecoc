@@ -27,7 +27,7 @@ func main() {
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	sigmaFctsSet := []float64{0.05, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 16.0, 20.0}
 	//read data
-	tsYdata, _, _ := readFile(*tsY, false)
+	tsYdata, _, _, _ := readFile(*tsY, false, false)
 	//vars
 	_, nLabel := tsYdata.Caps()
 	//CCA dims
@@ -82,7 +82,7 @@ func single_compute(tsYdata *mat64.Dense, k int, sigmaFcts float64, sumResF1 *ma
 	sFctStr := strconv.FormatFloat(sigmaFcts, 'f', 3, 64)
 	kStr := strconv.FormatInt(int64(k), 16)
 	inFile := "./" + resFolder + "/k" + kStr + "sFct" + sFctStr + ".txt"
-	tsYhat, _, _ := readFile(inFile, false)
+	tsYhat, _, _, _ := readFile(inFile, false, false)
 	//F1 score
 	mutex.Lock()
 	sumF1 := 0.0

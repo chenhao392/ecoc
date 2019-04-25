@@ -45,10 +45,10 @@ func main() {
 	rand.Seed(1)
 	runtime.GOMAXPROCS(*inThreads)
 	//read data
-	tsXdata, _, _ := readFile(*tsX, false)
-	tsYdata, _, _ := readFile(*tsY, false)
-	trXdata, _, _ := readFile(*trX, false)
-	trYdata, _, _ := readFile(*trY, false)
+	tsXdata, _, _, _ := readFile(*tsX, false, false)
+	tsYdata, _, _, _ := readFile(*tsY, false, false)
+	trXdata, _, _, _ := readFile(*trX, false, false)
+	trYdata, _, _, _ := readFile(*trY, false, false)
 
 	_, nFea := trXdata.Caps()
 	//nTs, _ := tsXdata.Caps()
