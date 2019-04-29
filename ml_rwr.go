@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gonum/matrix/mat64"
 	"math"
+	//"sort"
 )
 
 func colNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
@@ -87,6 +88,28 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 			res += math.Abs(prior.At(i, 0) - prePrior.At(i, 0))
 		}
 		i += 1
+	}
+
+	//var sortMap []kv
+	//for i := 0; i < r; i++ {
+	//	sortMap = append(sortMap, kv{i, prior.At(i, 0)})
+	//}
+	//sort.Slice(sortMap, func(i, j int) bool {
+	//	return sortMap[i].Value > sortMap[j].Value
+	//})
+
+	//thres = sortMap[50].Value
+	max := 0.0
+	for i := 0; i < r; i++ {
+		if prior.At(i, 0) < max {
+			max = prior.At(i, 0)
+		}
+	}
+
+	for i := 0; i < r; i++ {
+		//	if prior.At(i, 0) < thres {
+		prior.Set(i, 0, prior.At(i, 0)/max)
+		//	}
 	}
 	return prior
 }

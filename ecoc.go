@@ -34,7 +34,7 @@ func main() {
 	var tsY *string = flag.String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
 	var trX *string = flag.String("trX", "", "train FeatureSet")
 	var trY *string = flag.String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
-	var inNetworkFiles *string = flag.String("n", "data/hs_fus_net.txt,data/hs_pp_net.txt", "network file")
+	var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
 	var priorMatrixFiles *string = flag.String("p", "data/human.bp.level1.set1.trMatrix.txt", "prior/known gene file")
 	var resFolder *string = flag.String("res", "resultEmo", "resultFolder")
 	var inThreads *int = flag.Int("t", 48, "number of threads")
@@ -52,7 +52,7 @@ func main() {
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1 and rev
 	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
-	nFold := 2
+	nFold := 5
 	rand.Seed(1)
 	runtime.GOMAXPROCS(*inThreads)
 	//read data
@@ -205,10 +205,14 @@ func main() {
 	nL := nK * len(sigmaFctsSet)
 	sumResF1 := mat64.NewDense(1, nLabel, nil)
 	sumResAupr := mat64.NewDense(1, nLabel, nil)
+	//sumResF1 := mat64.NewDense(nL, nLabel, nil)
+	//sumResAupr := mat64.NewDense(nL, nLabel, nil)
 	macroF1 := mat64.NewDense(nL, 4, nil)
 	meanAupr := mat64.NewDense(nL, 4, nil)
 	testMacroF1 := mat64.NewDense(1, 3, nil)
 	testMeanAupr := mat64.NewDense(1, 3, nil)
+	//testMacroF1 := mat64.NewDense(nL, 3, nil)
+	//testMeanAupr := mat64.NewDense(nL, 3, nil)
 	//out dir
 	err := os.MkdirAll("./"+*resFolder, 0755)
 	if err != nil {
@@ -232,6 +236,7 @@ func main() {
 	//best training aupr
 	cBest := sortMap[0].Key
 	kSet = []int{int(meanAupr.At(cBest, 0))}
+	//kSet = []int{1, 2}
 	sigmaFctsSet = []float64{meanAupr.At(cBest, 1)}
 	ecocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, macroF1, meanAupr, nFold, nK, *resFolder, true, false)
 	//corresponding testing aupr and F1
