@@ -115,7 +115,7 @@ func readFile(inFile string, rowName bool, colName bool) (dataR *mat64.Dense, rN
 			value := Shift(&elements)
 			rName = append(rName, value)
 		}
-		//first element shifted if rowName is true
+		//first element already shifted if rowName is true
 		if colName && !touchCol {
 			cName = elements
 			touchCol = true

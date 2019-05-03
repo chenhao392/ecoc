@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	//"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 	"math/rand"
@@ -76,9 +76,9 @@ func colStack(X *mat64.Dense, oneSlice []float64) (X2 *mat64.Dense) {
 func colStackMatrix(X *mat64.Dense, addX *mat64.Dense) (X2 *mat64.Dense) {
 	X = mat64.DenseCopyOf(X.T())
 	X2 = mat64.NewDense(0, 0, nil)
-	a, b := X.Caps()
-	c, d := addX.Caps()
-	fmt.Println(a, b, d, c)
+	//a, b := X.Caps()
+	//c, d := addX.Caps()
+	//fmt.Println(a, b, d, c)
 	X2.Stack(addX.T(), X)
 	X2 = mat64.DenseCopyOf(X2.T())
 	return X2
@@ -323,7 +323,7 @@ func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	return aupr
 }
 
-func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64) {
+func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp int, fp int, fn int, tn int) {
 	type kv struct {
 		Key   int
 		Value float64
@@ -347,10 +347,10 @@ func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64) {
 	})
 	//o based index, thus -1
 	thres := sortYh[rankCut-1].Value
-	var tp int
-	var fp int
-	var fn int
-	var tn int
+	//var tp int
+	//var fp int
+	//var fn int
+	//var tn int
 	for i := 0; i < n; i++ {
 		y := Y.At(i, 0)
 		yh := Yh.At(i, 0)
@@ -383,5 +383,5 @@ func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64) {
 	} else {
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
-	return F1
+	return F1, tp, fp, fn, tn
 }

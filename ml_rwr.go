@@ -42,6 +42,7 @@ func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string
 	}
 	sPriorData = mat64.NewDense(nNetworkGene, nOutLabel, nil)
 	c := 0
+	wg.Add(nOutLabel)
 	for j := 0; j < nPriorLabel; j++ {
 		if ind[j] > 0 {
 			prior := mat64.NewDense(nNetworkGene, 1, nil)
@@ -52,16 +53,31 @@ func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string
 					prior.Set(idIdx[idArr[i]], 0, priorData.At(i, j))
 				}
 			}
-			//n by 1 matrix
-			sPrior := propagate(network, 0.6, prior)
-			for i := 0; i < nNetworkGene; i++ {
-				sPriorData.Set(i, c, sPrior.At(i, 0))
-			}
+			go single_sPriorData(network, sPriorData, prior, nNetworkGene, c)
 			c += 1
 		}
 	}
+	wg.Wait()
 	return sPriorData
+}
 
+func single_sPriorData(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, nNetworkGene int, c int) {
+	defer wg.Done()
+	//n by 1 matrix
+	sPrior1 := propagate(network, 0.7, prior)
+	sPrior2 := propagate(network, 1.0, prior)
+	mutex.Lock()
+	for i := 0; i < nNetworkGene; i++ {
+		value := sPrior1.At(i, 0) / sPrior2.At(i, 0)
+		if math.IsInf(value, 1) {
+			sPriorData.Set(i, c, 1.0)
+		} else if math.IsNaN(value) {
+			sPriorData.Set(i, c, 0.0)
+		} else {
+			sPriorData.Set(i, c, value)
+		}
+	}
+	mutex.Unlock()
 }
 func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoothPrior *mat64.Dense) {
 	sum := mat64.Sum(inPrior)
@@ -89,7 +105,6 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 		}
 		i += 1
 	}
-
 	//var sortMap []kv
 	//for i := 0; i < r; i++ {
 	//	sortMap = append(sortMap, kv{i, prior.At(i, 0)})
@@ -101,7 +116,7 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 	//thres = sortMap[50].Value
 	max := 0.0
 	for i := 0; i < r; i++ {
-		if prior.At(i, 0) < max {
+		if prior.At(i, 0) > max {
 			max = prior.At(i, 0)
 		}
 	}

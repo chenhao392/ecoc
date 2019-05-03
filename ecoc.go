@@ -30,13 +30,21 @@ type kv struct {
 
 func main() {
 	//input argv
-	var tsX *string = flag.String("tsX", "", "test FeatureSet")
-	var tsY *string = flag.String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
-	var trX *string = flag.String("trX", "", "train FeatureSet")
-	var trY *string = flag.String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
-	var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
-	var priorMatrixFiles *string = flag.String("p", "data/human.bp.level1.set1.trMatrix.txt", "prior/known gene file")
-	var resFolder *string = flag.String("res", "resultEmo", "resultFolder")
+	//var tsX *string = flag.String("tsX", "", "test FeatureSet")
+	//var tsY *string = flag.String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
+	//var trX *string = flag.String("trX", "", "train FeatureSet")
+	//var trY *string = flag.String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
+
+	var tsX *string = flag.String("tsX", "data/tsX.emo.txt", "test FeatureSet")
+	var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "test LabelSet")
+	var trX *string = flag.String("trX", "data/trX.emo.txt", "train FeatureSet")
+	var trY *string = flag.String("trY", "data/trY.emo.txt", "train LabelSet")
+	//var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
+	//var inNetworkFiles *string = flag.String("n", "data/hs_fus_net.txt,data/hs_pp_net.txt", "network file")
+	var inNetworkFiles *string = flag.String("n", "", "network file")
+	//var priorMatrixFiles *string = flag.String("p", "data/human.bp.level1.set1.trMatrix.txt", "prior/known gene file")
+	var priorMatrixFiles *string = flag.String("p", "", "prior/known gene file")
+	var resFolder *string = flag.String("res", "resultEmoTmp", "resultFolder")
 	var inThreads *int = flag.Int("t", 48, "number of threads")
 	var rankCut *int = flag.Int("c", 3, "rank cut (alpha) for F1 calculation")
 	var reg *bool = flag.Bool("r", false, "regularize CCA, default false")
@@ -205,11 +213,14 @@ func main() {
 	nL := nK * len(sigmaFctsSet)
 	sumResF1 := mat64.NewDense(1, nLabel, nil)
 	sumResAupr := mat64.NewDense(1, nLabel, nil)
+	sumResContingency := mat64.NewDense(1, 4, nil)
 	//sumResF1 := mat64.NewDense(nL, nLabel, nil)
 	//sumResAupr := mat64.NewDense(nL, nLabel, nil)
 	macroF1 := mat64.NewDense(nL, 4, nil)
+	microAupr := mat64.NewDense(nL, 5, nil)
 	meanAupr := mat64.NewDense(nL, 4, nil)
 	testMacroF1 := mat64.NewDense(1, 3, nil)
+	testMicroAupr := mat64.NewDense(1, 5, nil)
 	testMeanAupr := mat64.NewDense(1, 3, nil)
 	//testMacroF1 := mat64.NewDense(nL, 3, nil)
 	//testMeanAupr := mat64.NewDense(nL, 3, nil)
@@ -219,15 +230,20 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	fmt.Println("pass ecoc")
 	for i := 0; i < nFold; i++ {
-		ecocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, macroF1, meanAupr, nFold, nK, *resFolder, false, true)
+		ecocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, sumResContingency, microAupr, macroF1, meanAupr, nFold, nK, *resFolder, false, true)
 	}
+	//micro Aupr
+	n, _ := microAupr.Caps()
+	for i := 0; i < n; i++ {
+		microAupr.Set(i, 4, microAupr.At(i, 0)/(microAupr.At(i, 0)+microAupr.At(i, 1)+microAupr.At(i, 2)+microAupr.At(i, 3)))
+	}
+
 	//sort by meanAupr
-	n, _ := meanAupr.Caps()
-	//n, _ := macroF1.Caps()
 	var sortMap []kv
 	for i := 0; i < n; i++ {
-		sortMap = append(sortMap, kv{i, meanAupr.At(i, 3) / meanAupr.At(i, 2)})
+		sortMap = append(sortMap, kv{i, microAupr.At(i, 4)})
 		//sortMap = append(sortMap, kv{i, macroF1.At(i, 3) / macroF1.At(i, 2)})
 	}
 	sort.Slice(sortMap, func(i, j int) bool {
@@ -238,7 +254,7 @@ func main() {
 	kSet = []int{int(meanAupr.At(cBest, 0))}
 	//kSet = []int{1, 2}
 	sigmaFctsSet = []float64{meanAupr.At(cBest, 1)}
-	ecocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, macroF1, meanAupr, nFold, nK, *resFolder, true, false)
+	ecocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, sumResF1, sumResAupr, sumResContingency, microAupr, macroF1, meanAupr, nFold, nK, *resFolder, true, false)
 	//corresponding testing aupr and F1
 	sumAupr := 0.0
 	sumF1 := 0.0
@@ -249,6 +265,13 @@ func main() {
 	testMacroF1.Set(0, 0, float64(meanAupr.At(cBest, 0)))
 	testMacroF1.Set(0, 1, float64(meanAupr.At(cBest, 1)))
 	testMacroF1.Set(0, 2, sumF1/float64(nLabel))
+
+	testMicroAupr.Set(0, 0, float64(sumResContingency.At(0, 0)))
+	testMicroAupr.Set(0, 1, float64(sumResContingency.At(0, 1)))
+	testMicroAupr.Set(0, 2, float64(sumResContingency.At(0, 2)))
+	testMicroAupr.Set(0, 3, float64(sumResContingency.At(0, 3)))
+	testMicroAupr.Set(0, 4, float64(sumResContingency.At(0, 0)/(float64(sumResContingency.At(0, 0))+float64(sumResContingency.At(0, 1))+float64(sumResContingency.At(0, 2))+float64(sumResContingency.At(0, 3)))))
+
 	testMeanAupr.Set(0, 0, float64(meanAupr.At(cBest, 0)))
 	testMeanAupr.Set(0, 1, float64(meanAupr.At(cBest, 1)))
 	testMeanAupr.Set(0, 2, sumAupr/float64(nLabel))
@@ -262,13 +285,17 @@ func main() {
 	writeFile(oFile, macroF1)
 	oFile = "./" + *resFolder + "/cvTraining.meanAupr.txt"
 	writeFile(oFile, meanAupr)
+	oFile = "./" + *resFolder + "/cvTraining.microAupr.txt"
+	writeFile(oFile, microAupr)
 	oFile = "./" + *resFolder + "/cvTesting.macroF1.txt"
 	writeFile(oFile, testMacroF1)
 	oFile = "./" + *resFolder + "/cvTesting.meanAupr.txt"
 	writeFile(oFile, testMeanAupr)
+	oFile = "./" + *resFolder + "/cvTesting.microAupr.txt"
+	writeFile(oFile, testMicroAupr)
 	os.Exit(0)
 }
-func single_IOC_MFADecoding_and_result(outPerLabel bool, isGridSearch bool, nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, meanAupr *mat64.Dense, tsYdata *mat64.Dense, rankCut int, minDims int, resFolder string) {
+func single_IOC_MFADecoding_and_result(outPerLabel bool, isGridSearch bool, nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, sumResF1 *mat64.Dense, macroF1 *mat64.Dense, sumResAupr *mat64.Dense, sumResContingency *mat64.Dense, microAupr *mat64.Dense, meanAupr *mat64.Dense, tsYdata *mat64.Dense, rankCut int, minDims int, resFolder string) {
 	defer wg.Done()
 	if k >= minDims {
 		return
@@ -293,12 +320,16 @@ func single_IOC_MFADecoding_and_result(outPerLabel bool, isGridSearch bool, nTs 
 	sumF1 := 0.0
 	sumAupr := 0.0
 	for i := 0; i < nLabel; i++ {
-		f1 := computeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
+		f1, tp, fp, fn, tn := computeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
 		aupr := computeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
 		if outPerLabel {
 			sumResF1.Set(c, i, f1)
 			sumResAupr.Set(c, i, aupr)
 		}
+		sumResContingency.Set(0, 0, sumResContingency.At(0, 0)+float64(tp))
+		sumResContingency.Set(0, 1, sumResContingency.At(0, 1)+float64(fp))
+		sumResContingency.Set(0, 2, sumResContingency.At(0, 2)+float64(fn))
+		sumResContingency.Set(0, 3, sumResContingency.At(0, 3)+float64(tn))
 		sumF1 += f1
 		sumAupr += aupr
 	}
@@ -307,6 +338,12 @@ func single_IOC_MFADecoding_and_result(outPerLabel bool, isGridSearch bool, nTs 
 		macroF1.Set(c, 1, sigmaFcts)
 		macroF1.Set(c, 2, macroF1.At(c, 2)+1.0)
 		macroF1.Set(c, 3, sumF1/float64(nLabel)+macroF1.At(c, 3))
+
+		microAupr.Set(c, 0, sumResContingency.At(0, 0)+microAupr.At(c, 0))
+		microAupr.Set(c, 1, sumResContingency.At(0, 1)+microAupr.At(c, 1))
+		microAupr.Set(c, 2, sumResContingency.At(0, 2)+microAupr.At(c, 2))
+		microAupr.Set(c, 3, sumResContingency.At(0, 3)+microAupr.At(c, 3))
+
 		meanAupr.Set(c, 0, float64(k))
 		meanAupr.Set(c, 1, sigmaFcts)
 		meanAupr.Set(c, 2, meanAupr.At(c, 2)+1.0)
@@ -329,7 +366,7 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int,
 	mutex.Unlock()
 }
 
-func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut *int, reg *bool, kSet []int, sigmaFctsSet []float64, sumResF1 *mat64.Dense, sumResAupr *mat64.Dense, macroF1 *mat64.Dense, meanAupr *mat64.Dense, nFold int, nK int, resFolder string, outPerLabel bool, isGridSearch bool) (err error) {
+func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut *int, reg *bool, kSet []int, sigmaFctsSet []float64, sumResF1 *mat64.Dense, sumResAupr *mat64.Dense, sumResContingency *mat64.Dense, microAupr *mat64.Dense, macroF1 *mat64.Dense, meanAupr *mat64.Dense, nFold int, nK int, resFolder string, outPerLabel bool, isGridSearch bool) (err error) {
 	colSum, trYdata := posFilter(trYdata)
 	tsYdata = posSelect(tsYdata, colSum)
 	//vars
@@ -343,7 +380,6 @@ func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 		return nil
 	}
-
 	//tsY_prob
 	tsY_Prob := mat64.NewDense(nRowTsY, nLabel, nil)
 	//adding bias term for tsXData
@@ -410,14 +446,14 @@ func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		for k := 0; k < nK; k++ {
 			Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[k]))
 			for s := 0; s < len(sigmaFctsSet); s++ {
-				go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, sumResF1, macroF1, sumResAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
+				go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, sumResF1, macroF1, sumResAupr, sumResContingency, microAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
 				c += 1
 			}
 		}
 	} else {
 		wg.Add(1)
 		Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[0]))
-		go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[0], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[0], nLabel, sumResF1, macroF1, sumResAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
+		go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[0], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[0], nLabel, sumResF1, macroF1, sumResAupr, sumResContingency, microAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
 
 	}
 	wg.Wait()
