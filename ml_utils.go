@@ -322,6 +322,52 @@ func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	//fmt.Println("AUPR: ", aupr)
 	return aupr
 }
+func flat(Y *mat64.Dense) (vec *mat64.Vector) {
+	nR, nC := Y.Caps()
+	vec = mat64.NewVector(nR*nC, nil)
+	c := 0
+	for i := 0; i < nC; i++ {
+		for j := 0; j < nR; j++ {
+			vec.SetVec(c, Y.At(j, i))
+			c += 1
+		}
+	}
+	return vec
+}
+func binPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
+	type kv struct {
+		Key   int
+		Value float64
+	}
+	nRow, nCol := Yh.Caps()
+	binYh = mat64.NewDense(nRow, nCol, nil)
+	for r := 0; r < nRow; r++ {
+		var sortYh []kv
+		for c := 0; c < nCol; c++ {
+			ele := Yh.At(r, c)
+			if math.IsNaN(ele) {
+				sortYh = append(sortYh, kv{c, 0.0})
+			} else {
+				sortYh = append(sortYh, kv{c, Yh.At(r, c)})
+			}
+		}
+		sort.Slice(sortYh, func(i, j int) bool {
+			return sortYh[i].Value > sortYh[j].Value
+		})
+		thres := sortYh[rankCut].Value
+		for c := 0; c < nCol; c++ {
+			ele := Yh.At(r, c)
+			if math.IsNaN(ele) {
+				binYh.Set(r, c, 0.0)
+			} else if Yh.At(r, c) > thres {
+				binYh.Set(r, c, 1.0)
+			} else {
+				binYh.Set(r, c, 0.0)
+			}
+		}
+	}
+	return binYh
+}
 
 func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp int, fp int, fn int, tn int) {
 	type kv struct {
@@ -384,4 +430,40 @@ func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp
 		F1 = 2 * float64(prec) * float64(rec) / (float64(prec) + float64(rec))
 	}
 	return F1, tp, fp, fn, tn
+}
+func single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
+	//F1 score
+	_, nLabel := tsYdata.Caps()
+	sumAupr := 0.0
+	sumF1 := 0.0
+	sumTp := 0
+	sumFp := 0
+	sumFn := 0
+	sumTn := 0
+	for i := 0; i < nLabel; i++ {
+		aupr := computeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		//fmt.Println(f1)
+		sumAupr += aupr
+	}
+	tsYhat = binPredByAlpha(tsYhat, rankCut)
+
+	for i := 0; i < nLabel; i++ {
+		f1, tp, fp, fn, tn := computeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
+		sumF1 += f1
+		sumTp += tp
+		sumFp += fp
+		sumFn += fn
+		sumTn += tn
+	}
+	p := float64(sumTp) / (float64(sumTp) + float64(sumFp))
+	r := float64(sumTp) / (float64(sumTp) + float64(sumFn))
+	microF1 = 2.0 * p * r / (p + r)
+	accuracy = (float64(sumTp) + float64(sumTn)) / (float64(sumTp) + float64(sumFp) + float64(sumFn) + float64(sumTn))
+	macroAupr = sumAupr / float64(nLabel)
+
+	//y-flat
+	tsYdataVec := flat(tsYdata)
+	tsYhatVec := flat(tsYhat)
+	microAupr = computeAupr(tsYdataVec, tsYhatVec)
+	return microF1, accuracy, macroAupr, microAupr
 }
