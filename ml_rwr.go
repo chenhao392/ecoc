@@ -20,6 +20,21 @@ func colNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	return normNet, n
 }
 
+func dNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
+	n, _ = network.Caps()
+	d := mat64.NewDense(n, n, nil)
+	normNet = mat64.NewDense(0, 0, nil)
+	for j := 0; j < n; j++ {
+		s := math.Sqrt(mat64.Sum(network.RowView(j)))
+		if s > 0.0 {
+			d.Set(j, j, 1.0/s)
+		}
+	}
+	term1 := mat64.NewDense(0, 0, nil)
+	term1.Mul(d, network)
+	normNet.Mul(term1, d)
+	return normNet, n
+}
 func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int) (sPriorData *mat64.Dense) {
 	network, nNetworkGene := colNorm(network)
 	nPriorGene, nPriorLabel := priorData.Caps()
@@ -62,6 +77,17 @@ func propagateSet(network *mat64.Dense, priorData *mat64.Dense, idIdx map[string
 }
 
 func single_sPriorData(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, nNetworkGene int, c int) {
+	defer wg.Done()
+	//n by 1 matrix
+	sPrior1 := propagate(network, 0.6, prior)
+	mutex.Lock()
+	for i := 0; i < nNetworkGene; i++ {
+		value := sPrior1.At(i, 0)
+		sPriorData.Set(i, c, value)
+	}
+	mutex.Unlock()
+}
+func single_sPriorDataDada(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, nNetworkGene int, c int) {
 	defer wg.Done()
 	//n by 1 matrix
 	sPrior1 := propagate(network, 0.7, prior)

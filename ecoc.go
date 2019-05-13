@@ -44,8 +44,8 @@ func main() {
 	//var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "test LabelSet")
 	//var trX *string = flag.String("trX", "data/trX.emo.txt", "train FeatureSet")
 	//var trY *string = flag.String("trY", "data/trY.emo.txt", "train LabelSet")
-	//var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
-	var inNetworkFiles *string = flag.String("n", "data/hs_fus_net.txt,data/hs_pp_net.txt", "network file")
+	var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
+	//var inNetworkFiles *string = flag.String("n", "data/hs_fus_net.txt,data/hs_pp_net.txt", "network file")
 	//var inNetworkFiles *string = flag.String("n", "", "network file")
 	var priorMatrixFiles *string = flag.String("p", "data/human.bp.level1.set1.trMatrix.txt", "prior/known gene file")
 	//var priorMatrixFiles *string = flag.String("p", "", "prior/known gene file")
@@ -63,9 +63,10 @@ func main() {
 		os.Exit(1)
 	}
 	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	//kSet := []int{1}
 	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1 and rev
 	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
-	nFold := 2
+	nFold := 5
 	rand.Seed(1)
 	runtime.GOMAXPROCS(*inThreads)
 	//read data
@@ -329,6 +330,8 @@ func main() {
 	writeFile(oFile, testMacroAupr)
 	oFile = "./" + *resFolder + "/cvTesting.microAupr.txt"
 	writeFile(oFile, testMicroAupr)
+	oFile = "./" + *resFolder + "/test.probMatrix.txt"
+	writeFile(oFile, YhSet[0])
 	os.Exit(0)
 }
 

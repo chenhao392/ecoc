@@ -23,7 +23,8 @@ func main() {
 		for j := 0; j < len(priorMatrixFile); j++ {
 			//idIdx as gene -> idx in net
 			network, idIdx, idxToId := readNetwork(inNetworkFile[i])
-			network, n := colNorm(network)
+			network, n := dNorm(network)
+			//os.Exit(0)
 			//r, c := network.Caps()
 			//for k := 0; k < 10; k++ {
 			//	for l := 0; l < 10; l++ {
@@ -44,7 +45,7 @@ func main() {
 			//for i := 0; i < n; i++ {
 			//	fmt.Println(idxToId[i], prior.At(i, 0))
 			//}
-			sPrior := propagate(network, 0.7, prior)
+			sPrior := propagate(network, 0.6, prior)
 			sPrior2 := propagate(network, 1.0, prior)
 			for i := 0; i < n; i++ {
 				fmt.Println(idxToId[i], sPrior.At(i, 0)/sPrior2.At(i, 0))

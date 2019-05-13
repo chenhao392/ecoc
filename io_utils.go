@@ -72,7 +72,7 @@ func idIdxGen(inNetworkFile string) (idIdx map[string]int, idxToId map[int]strin
 		}
 	}
 	//count +1, so that it is number of unique IDs
-	count += 1
+	//count += 1
 	return idIdx, idxToId, count
 }
 
