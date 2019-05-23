@@ -37,17 +37,24 @@ func main() {
 	//input argv
 	var tsX *string = flag.String("tsX", "", "test FeatureSet")
 	var tsY *string = flag.String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
+	//var tsY *string = flag.String("tsY", "data/yeast.level1.set1.tsMatrix.txt", "test LabelSet")
 	var trX *string = flag.String("trX", "", "train FeatureSet")
 	var trY *string = flag.String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
+	//var trY *string = flag.String("trY", "data/yeast.level1.set1.trMatrix.txt", "train LabelSet")
 
 	//var tsX *string = flag.String("tsX", "data/tsX.emo.txt", "test FeatureSet")
 	//var tsY *string = flag.String("tsY", "data/tsY.emo.txt", "test LabelSet")
 	//var trX *string = flag.String("trX", "data/trX.emo.txt", "train FeatureSet")
 	//var trY *string = flag.String("trY", "data/trY.emo.txt", "train LabelSet")
-	var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
+	//var inNetworkFiles *string = flag.String("n", "data/hs_coe_net.txt,data/hs_db_net.txt,data/hs_exp_net.txt,data/hs_fus_net.txt,data/hs_nej_net.txt,data/hs_pp_net.txt", "network file")
+	//var inNetworkFiles *string = flag.String("n", "data/sc_coe_net.txt,data/sc_db_net.txt,data/sc_exp_net.txt,data/sc_fus_net.txt,data/sc_nej_net.txt,data/sc_pp_net.txt", "network file")
+	//var inNetworkFiles *string = flag.String("n", "data/sc_db_net.txt,data/sc_exp_net.txt,data/sc_fus_net.txt,data/sc_nej_net.txt,data/sc_pp_net.txt", "network file")
+	//var inNetworkFiles *string = flag.String("n", "data/sc_db_net.txt,data/sc_exp_net.txt", "network file")
+	var inNetworkFiles *string = flag.String("n", "data/hs_exp_net.txt", "network file")
 	//var inNetworkFiles *string = flag.String("n", "data/hs_fus_net.txt,data/hs_pp_net.txt", "network file")
 	//var inNetworkFiles *string = flag.String("n", "", "network file")
 	var priorMatrixFiles *string = flag.String("p", "data/human.bp.level1.set1.trMatrix.txt", "prior/known gene file")
+	//var priorMatrixFiles *string = flag.String("p", "data/yeast.level1.set1.trMatrix.txt", "prior/known gene file")
 	//var priorMatrixFiles *string = flag.String("p", "", "prior/known gene file")
 	var resFolder *string = flag.String("res", "resultEmo", "resultFolder")
 	var inThreads *int = flag.Int("t", 48, "number of threads")
@@ -62,8 +69,8 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	//kSet := []int{1}
+	//kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	kSet := []int{1}
 	//0.01,0.05,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1 and rev
 	sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0}
 	nFold := 5
@@ -243,7 +250,7 @@ func main() {
 			for n := 0; n < len(sigmaFctsSet); n++ {
 				//fmt.Println(i, j, c)
 				//fmt.Println(YhSet[c].At(0, 0))
-				microF1, accuracy, macroAupr, microAupr := single_compute(testFold[i].Y, YhSet[c], *rankCut)
+				microF1, accuracy, macroAupr, microAupr := single_compute(testFold[i].Y, YhSet[c], trainFold[i].Y, *rankCut)
 				trainF1.Set(c, 0, float64(kSet[m]))
 				trainF1.Set(c, 1, sigmaFctsSet[n])
 				trainF1.Set(c, 2, trainF1.At(c, 2)+1.0)
@@ -291,7 +298,7 @@ func main() {
 	//for i := 0; i < nK; i++ {
 	i := 0
 	for j := 0; j < len(sigmaFctsSet); j++ {
-		microF1, accuracy, macroAupr, microAupr := single_compute(tsYdata, YhSet[c], *rankCut)
+		microF1, accuracy, macroAupr, microAupr := single_compute(tsYdata, YhSet[c], trYdata, *rankCut)
 		testF1.Set(c, 0, float64(kSet[i]))
 		testF1.Set(c, 1, sigmaFctsSet[j])
 		testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -402,6 +409,7 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int,
 	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr, randValues, idxPerm)
 	mutex.Lock()
 	sigma.Set(0, i, math.Sqrt(optMSE))
+	fmt.Println("at", i)
 	//bias term for tsXdata added before
 	element := mat64.NewDense(0, 0, nil)
 	element.Mul(tsXdataB, beta)
@@ -480,6 +488,8 @@ func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//for workers
 	randValues := RandListFromUniDist(nTr)
 	idxPerm := rand.Perm(nTr)
+	_, nCol := trY_Cdata.Caps()
+	fmt.Println("nCol:", nCol, "nLabel:", nLabel)
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
 		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm)

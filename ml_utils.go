@@ -1,10 +1,11 @@
 package main
 
 import (
-	//"fmt"
+	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 	"math/rand"
+	"os"
 	"sort"
 )
 
@@ -157,6 +158,22 @@ func cvSplit(nElement int, nFold int) (cvSet map[int][]int) {
 	return cvSet
 }
 
+func cvSplitNoPerm(nElement int, nFold int) (cvSet map[int][]int) {
+	//this is a tmp solution for cvSplit without perm, as number of positive is different for each label in feature filtering
+	cvSet = make(map[int][]int)
+	j := 0
+	if nElement >= nFold {
+		for i := 0; i < nElement; i++ {
+			j = i % nFold
+			cvSet[j] = append(cvSet[j], i)
+		}
+	} else {
+		fmt.Println(nElement, "less than cv folds", nFold)
+		os.Exit(1)
+	}
+	return cvSet
+}
+
 func minIdx(inArray []float64) (idx int) {
 	m := inArray[0]
 	minSet := make([]int, 0)
@@ -278,11 +295,15 @@ func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	}
 	n := Y.Len()
 	mapY := make(map[int]int)
+	//skipY := make(map[int]int)
 	var sortYh []kv
 	for i := 0; i < n; i++ {
 		if Y.At(i, 0) == 1.0 {
 			mapY[i] = 1
 		}
+		//if Ys.At(i, 0) == 1.0 {
+		//	skipY[i] = 1
+		//}
 		ele := Yh.At(i, 0)
 		if math.IsNaN(ele) {
 			sortYh = append(sortYh, kv{i, 0.0})
@@ -301,6 +322,10 @@ func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	prData := make([]float64, 0)
 	for _, kv := range sortYh {
 		//fmt.Println(kv.Key, kv.Value)
+		//_, ok2 := skipY[kv.Key]
+		//if ok2 {
+		//continue
+		//}
 		all += 1.0
 		p += 1.0
 		_, ok := mapY[kv.Key]
@@ -322,6 +347,66 @@ func computeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	//fmt.Println("AUPR: ", aupr)
 	return aupr
 }
+func computeAuprSkipTr(Y *mat64.Vector, Yh *mat64.Vector, Ys *mat64.Vector) (aupr float64) {
+	type kv struct {
+		Key   int
+		Value float64
+	}
+	n := Y.Len()
+	mapY := make(map[int]int)
+	skipY := make(map[int]int)
+	var sortYh []kv
+	for i := 0; i < n; i++ {
+		if Y.At(i, 0) == 1.0 {
+			mapY[i] = 1
+		}
+		if Ys.At(i, 0) == 1.0 {
+			skipY[i] = 1
+		}
+		ele := Yh.At(i, 0)
+		if math.IsNaN(ele) {
+			sortYh = append(sortYh, kv{i, 0.0})
+		} else {
+			sortYh = append(sortYh, kv{i, Yh.At(i, 0)})
+		}
+	}
+	sort.Slice(sortYh, func(i, j int) bool {
+		return sortYh[i].Value > sortYh[j].Value
+	})
+
+	all := 0.0
+	p := 0.0
+	tp := 0.0
+	total := float64(len(mapY))
+	prData := make([]float64, 0)
+	for _, kv := range sortYh {
+		//fmt.Println(kv.Key, kv.Value)
+		_, ok2 := skipY[kv.Key]
+		if ok2 {
+			continue
+		}
+		all += 1.0
+		p += 1.0
+		_, ok := mapY[kv.Key]
+		if ok {
+			tp += 1.0
+			pr := tp / p
+			re := tp / total
+			prData = append(prData, pr)
+			prData = append(prData, re)
+		}
+	}
+
+	aupr = 0.0
+	for i := 2; i < len(prData)-1; i += 2 {
+		//fmt.Println("AUPR:", aupr, prData[i-2], prData[i], prData[i+1], prData[i-1])
+		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
+	}
+	aupr = aupr / 2
+	//fmt.Println("AUPR: ", aupr)
+	return aupr
+}
+
 func flat(Y *mat64.Dense) (vec *mat64.Vector) {
 	nR, nC := Y.Caps()
 	vec = mat64.NewVector(nR*nC, nil)
@@ -343,18 +428,37 @@ func binPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
 	binYh = mat64.NewDense(nRow, nCol, nil)
 	for r := 0; r < nRow; r++ {
 		var sortYh []kv
+		//skipY := make(map[int]int)
 		for c := 0; c < nCol; c++ {
+			//Yh
 			ele := Yh.At(r, c)
 			if math.IsNaN(ele) {
 				sortYh = append(sortYh, kv{c, 0.0})
 			} else {
 				sortYh = append(sortYh, kv{c, Yh.At(r, c)})
 			}
+			//Ys
+			//if Ys.At(r, c) == 1.0 {
+			//	skipY[c] = 1
+			//}
+
 		}
 		sort.Slice(sortYh, func(i, j int) bool {
 			return sortYh[i].Value > sortYh[j].Value
 		})
 		thres := sortYh[rankCut].Value
+		//nEle := 0
+		//thres := 0.0
+		//for key, _ := range sortYh {
+		//	_, exist := skipY[key]
+		//	if !exist {
+		//		nEle += 1
+		//		if rankCut == nEle {
+		//			thres = sortYh[nEle].Value
+		//			break
+		//		}
+		//	}
+		//}
 		for c := 0; c < nCol; c++ {
 			ele := Yh.At(r, c)
 			if math.IsNaN(ele) {
@@ -376,11 +480,15 @@ func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp
 	}
 	n := Y.Len()
 	mapY := make(map[int]int)
+	//skipY := make(map[int]int)
 	var sortYh []kv
 	for i := 0; i < n; i++ {
 		if Y.At(i, 0) == 1.0 {
 			mapY[i] = 1
 		}
+		//if Ys.At(i, 0) == 1.0 {
+		//	skipY[i] = 1
+		//}
 		ele := Yh.At(i, 0)
 		if math.IsNaN(ele) {
 			sortYh = append(sortYh, kv{i, 0.0})
@@ -400,6 +508,8 @@ func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp
 	for i := 0; i < n; i++ {
 		y := Y.At(i, 0)
 		yh := Yh.At(i, 0)
+		//_, exist := skipY[i]
+		//if !exist {
 		if y > 0 && yh >= thres {
 			tp += 1
 		} else if y <= 0 && yh >= thres {
@@ -409,6 +519,7 @@ func computeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp
 		} else if y <= 0 && yh < thres {
 			tn += 1
 		}
+		//}
 	}
 	var prec float64
 	var rec float64
@@ -464,6 +575,7 @@ func single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	//y-flat
 	tsYdataVec := flat(tsYdata)
 	tsYhatVec := flat(tsYhat)
+
 	microAupr = computeAupr(tsYdataVec, tsYhatVec)
 	return microF1, accuracy, macroAupr, microAupr
 }
