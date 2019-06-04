@@ -86,7 +86,7 @@ func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]i
 			}
 			prior := mat64.DenseCopyOf(trY)
 			go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, c, wg, mutex)
-			//go single_sPriorDataDada(network, sPriorData, prior, nNetworkGene, c)
+			//go single_sPriorDataDada(network, sPriorData, prior,trY, nNetworkGene, c)
 			c += 1
 		}
 	}
@@ -140,7 +140,7 @@ func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, p
 			}
 			prior := addPrior(priorData, priorGeneID, priorIdxToId, trY, idIdx, idxToId, kBest, nNetworkGene)
 			go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, c, wg, mutex)
-			//go single_sPriorDataDada(network, sPriorData, prior, nNetworkGene, c)
+			//go single_sPriorDataDada(network, sPriorData, prior,trY, nNetworkGene, c)
 			c += 1
 		}
 	}
