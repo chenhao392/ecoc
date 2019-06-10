@@ -21,14 +21,9 @@
 package cmd
 
 import (
-	//"bufio"
-	"flag"
 	"fmt"
 	"math"
-	//"os"
 	"runtime"
-	//"strconv"
-	//"strings"
 	"sync"
 
 	"github.com/chenhao392/ecoc/src"
@@ -70,6 +65,18 @@ var calsCmd = &cobra.Command{
 a gene by feature matrix.`,
 
 	Run: func(cmd *cobra.Command, args []string) {
+		inFile, _ := cmd.Flags().GetString("i")
+		threads, _ := cmd.Flags().GetInt("t")
+		data, rName, _, _ := src.ReadFile(inFile, true, false)
+		data2, _ := paraCov(data, threads)
+		_, nCol := data2.Caps()
+		for i := range rName {
+			fmt.Printf("%v", rName[i])
+			for j := 0; j < nCol; j++ {
+				fmt.Printf("\t%1.6f", data2.At(i, j))
+			}
+			fmt.Printf("\n")
+		}
 	},
 }
 
@@ -80,27 +87,10 @@ func init() {
 
 }
 
-func main() {
-	var inFile *string = flag.String("i", "test.txt", "tab delimited matrix")
-	var inThreads *int = flag.Int("p", 1, "number of threads")
-	flag.Parse()
-	data, rName, _, _ := src.ReadFile(*inFile, true, false)
-	data2, _ := paraCov(data, *inThreads)
-	_, nCol := data2.Caps()
-	for i := range rName {
-		fmt.Printf("%v", rName[i])
-		for j := 0; j < nCol; j++ {
-			fmt.Printf("\t%1.6f", data2.At(i, j))
-		}
-		fmt.Printf("\n")
-	}
-}
-
 //Multiple threads PCC
 func paraCov(data *mat64.Dense, goro int) (covmat *mat64.Dense, err error) {
 	nSets, nData := data.Dims()
 	if nSets == 0 {
-		return mat64.NewDense(0, 0, nil), nil
 	}
 	runtime.GOMAXPROCS(goro)
 	c := make([]coor, 1)
@@ -149,7 +139,6 @@ func paraCov(data *mat64.Dense, goro int) (covmat *mat64.Dense, err error) {
 
 	var wg sync.WaitGroup
 	in := make(chan coor, goro*40)
-	//quit := make(chan bool, goro)
 
 	singlePCC := func() {
 		for {
@@ -174,8 +163,6 @@ func paraCov(data *mat64.Dense, goro int) (covmat *mat64.Dense, err error) {
 					}
 				}
 				wg.Done()
-				//case <-quit:
-				//	return
 			}
 		}
 	}
@@ -184,14 +171,10 @@ func paraCov(data *mat64.Dense, goro int) (covmat *mat64.Dense, err error) {
 	for i := 0; i < goro; i++ {
 		go singlePCC()
 	}
-	//fmt.Println("length: ", len(c))
 	for i := 0; i < len(c); i++ {
 		in <- c[i]
 	}
 	wg.Wait()
-	//for i := 0; i < goro; i++ {
-	//	quit <- true
-	//}
 
 	return covmat, nil
 }

@@ -25,28 +25,25 @@ package cmd
 import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
-	//"github.com/gonum/stat"
-	//"log"
 	"math"
 	"math/rand"
 	"os"
 	"runtime"
 	"sort"
-	//"strconv"
 	"strings"
-	"sync"
+	//"sync"
 	//"unsafe"
 	"github.com/chenhao392/ecoc/src"
 	"github.com/spf13/cobra"
 )
 
-type kv struct {
-	Key   int
-	Value float64
-}
+//type kv struct {
+//	Key   int
+//	Value float64
+//}
 
-var wg sync.WaitGroup
-var mutex sync.Mutex
+//var wg sync.WaitGroup
+//var mutex sync.Mutex
 
 // tuneCmd represents the tune command
 var tuneCmd = &cobra.Command{
@@ -70,7 +67,8 @@ propagation on a network or networks.
 
 If at least one network file is provided and no feature data found, the program will 
 compute the matrix.
- 1) The network file is a tab delimited file with three columns. The first two
+
+1) The network file is a tab delimited file with three columns. The first two
     columns define gene-gene interactions using the instance/gene names IDs used 
 	in training and test data. The third column is the confidence score.
  2) Multiple additional priors can be added into the label propagation process if provided.
@@ -120,13 +118,13 @@ Sample usages:
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 			if priorMatrixFiles == "" {
-				sPriorData := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, &wg, &mutex)
-				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata)
+				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, &wg, &mutex)
+				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-					sPriorData := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, &wg, &mutex)
-					tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata)
+					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, &wg, &mutex)
+					tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 				}
 			}
 		}
@@ -180,9 +178,10 @@ Sample usages:
 				sPriorData := mat64.NewDense(0, 0, nil)
 				//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 				if priorMatrixFiles == "" {
-					sPriorData = src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, &wg, &mutex)
+					sPriorData, _ = src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, &wg, &mutex)
 					_, nLabel := sPriorData.Caps()
 					tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
+					//TO BE FIX for adding trY label to trX
 					//trX
 					for k := 0; k < len(trRowName); k++ {
 						for l := 0; l < nLabel; l++ {
@@ -201,7 +200,7 @@ Sample usages:
 				} else {
 					for j := 0; j < len(priorMatrixFile); j++ {
 						priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-						sPriorData = src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataCV, idIdx, idxToId, trRowNameCV, trGeneMapCV, &wg, &mutex)
+						sPriorData, _ = src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataCV, idIdx, idxToId, trRowNameCV, trGeneMapCV, &wg, &mutex)
 						_, nLabel := sPriorData.Caps()
 						tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
 						//trX

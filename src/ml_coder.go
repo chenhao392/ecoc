@@ -190,8 +190,10 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	return YhSet
 }
 func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64) {
-	lamda := []float64{0.1, 1, 10}
-	err := []float64{0, 0, 0}
+	//lamda := []float64{0.1, 1, 10}
+	//err := []float64{0, 0, 0}
+	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	nY := Y.Len()
 	//index positive and megetive examples
 	posIndex := make([]int, 0)
@@ -286,8 +288,8 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
 	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	//lamda := []float64{0.01, 0.1, 1, 10, 100}
-	//err := []float64{0, 0, 0, 0, 0}
+	//lamda := []float64{0.1, 1, 10}
+	//err := []float64{0, 0, 0}
 	//idxPerm 0:nTr, value as random order nTr
 	//rand.Seed(1)
 	//idxPerm := rand.Perm(nTr)
@@ -298,7 +300,8 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFe
 		cvTrain := make([]int, 0)
 		cvTest := make([]int, 0)
 		cvTestMap := map[int]int{}
-		for j := i * nTr / nFold; j < (i+1)*nTr/nFold-1; j++ {
+		//for j := i * nTr / nFold; j < (i+1)*nTr/nFold-1; j++ {
+		for j := i; j < nTr; j += nFold {
 			cvTest = append(cvTest, idxPerm[j])
 			cvTestMap[idxPerm[j]] = idxPerm[j]
 		}

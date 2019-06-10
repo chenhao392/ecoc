@@ -42,12 +42,12 @@ func dNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	normNet.Mul(term1, d)
 	return normNet, n
 }
-func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense) {
+func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
 	network, nNetworkGene := dNorm(network)
 	//nPriorGene, nPriorLabel := priorData.Caps()
 	nTrGene, nTrLabel := trYdata.Caps()
 	//ind for prior/label gene set mapping at least one gene to the network
-	ind := make([]int, nTrLabel)
+	ind = make([]int, nTrLabel)
 	wg.Add(nTrLabel)
 	for j := 0; j < nTrLabel; j++ {
 		inGene := make([]int, 0)
@@ -91,15 +91,15 @@ func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]i
 		}
 	}
 	wg.Wait()
-	return sPriorData
+	return sPriorData, ind
 }
 
-func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, priorIdxToId map[int]string, network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idxToId map[int]string, idArr []string, trGeneMap map[string]int, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense) {
+func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, priorIdxToId map[int]string, network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idxToId map[int]string, idArr []string, trGeneMap map[string]int, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
 	network, nNetworkGene := dNorm(network)
 	//nPriorGene, nPriorLabel := priorData.Caps()
 	nTrGene, nTrLabel := trYdata.Caps()
 	//ind for prior/label gene set mapping at least one gene to the network
-	ind := make([]int, nTrLabel)
+	ind = make([]int, nTrLabel)
 	wg.Add(nTrLabel)
 	for j := 0; j < nTrLabel; j++ {
 		inGene := make([]int, 0)
@@ -145,7 +145,7 @@ func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, p
 		}
 	}
 	wg.Wait()
-	return sPriorData
+	return sPriorData, ind
 }
 func single_sPriorData(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, trY *mat64.Dense, nNetworkGene int, c int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
@@ -450,7 +450,7 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 	return prior
 }
 
-func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []string, idIdx map[string]int, tsXdata *mat64.Dense, trXdata *mat64.Dense) (tsXdata1 *mat64.Dense, trXdata1 *mat64.Dense) {
+func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []string, idIdx map[string]int, tsXdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, ind []int) (tsXdata1 *mat64.Dense, trXdata1 *mat64.Dense) {
 	_, nLabel := sPriorData.Caps()
 	tmpTsXdata := mat64.NewDense(len(tsRowName), nLabel, nil)
 	tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
@@ -470,11 +470,25 @@ func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []s
 		tsXdata = ColStackMatrix(tsXdata, tmpTsXdata)
 	}
 	//trX
-	for k := 0; k < len(trRowName); k++ {
-		for l := 0; l < nLabel; l++ {
+	//l as trYdata cols, pL as priorData cols
+	pL := 0
+	for l := 0; l < len(ind); l++ {
+		if ind[l] > 0 {
+			//pL always 1 larger than actural index
+			pL += 1
+		} else {
+			//skip trY idx not used in priorData
+			continue
+		}
+		for k := 0; k < len(trRowName); k++ {
 			_, exist := idIdx[trRowName[k]]
 			if exist {
-				tmpTrXdata.Set(k, l, sPriorData.At(idIdx[trRowName[k]], l))
+				if trYdata.At(k, l) == 1.0 {
+					tmpTrXdata.Set(k, pL-1, 1.0)
+				} else {
+					//mod l
+					tmpTrXdata.Set(k, pL-1, sPriorData.At(idIdx[trRowName[k]], pL-1))
+				}
 			}
 		}
 	}
