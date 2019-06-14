@@ -58,7 +58,7 @@ var diagCmd = &cobra.Command{
 		nFold, _ := cmd.Flags().GetInt("nFold")
 
 		kSet := []int{1}
-		sigmaFctsSet := []float64{10000000000000.0}
+		sigmaFctsSet := []float64{1.0}
 		//sigmaFctsSet := []float64{0.01, 1, 100.0}
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
@@ -98,6 +98,7 @@ var diagCmd = &cobra.Command{
 		}
 		//run
 		YhSet := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		rebaData := src.RebalanceData(trYdata)
 		//measures
 		testF1 := mat64.NewDense(1, 4, nil)
 		testAccuracy := mat64.NewDense(1, 4, nil)
@@ -114,7 +115,8 @@ var diagCmd = &cobra.Command{
 		c := 0
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
-			microF1, accuracy, macroAupr, microAupr := src.Single_compute(tsYdata, YhSet[c], rankCut)
+			microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
+
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
 			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -145,6 +147,8 @@ var diagCmd = &cobra.Command{
 		src.WriteFile(oFile, testMicroAupr)
 		oFile = "./" + resFolder + "/test.probMatrix.txt"
 		src.WriteFile(oFile, YhSet[0])
+		oFile = "./" + resFolder + "/rebalance.scale.txt"
+		src.WriteFile(oFile, rebaData)
 		os.Exit(0)
 	},
 }

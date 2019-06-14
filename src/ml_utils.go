@@ -193,34 +193,42 @@ func minIdx(inArray []float64) (idx int) {
 	return idx
 }
 
-func ColScale(data *mat64.Dense) (scaleData *mat64.Dense) {
+func ColScale(data *mat64.Dense, rebaData *mat64.Dense) (scaleData *mat64.Dense) {
 	nRow, nCol := data.Caps()
 	scaleData = mat64.NewDense(nRow, nCol, nil)
-	maxValue := make([]float64, nCol)
-	for i := 0; i < nRow; i++ {
-		for j := 0; j < nCol; j++ {
-			if maxValue[j] < data.At(i, j) {
-				maxValue[j] = data.At(i, j)
+	scaleValue := make([]float64, nCol)
+	for j := 0; j < nCol; j++ {
+		var sortYh []kv
+		for i := 0; i < nRow; i++ {
+			sortYh = append(sortYh, kv{i, data.At(i, j)})
+		}
+		sort.Slice(sortYh, func(i, j int) bool {
+			return sortYh[i].Value > sortYh[j].Value
+		})
+		scaleIdx := int(2.0 * rebaData.At(0, j) * float64(nRow))
+		for i := scaleIdx; i >= 0; i-- {
+			if sortYh[i].Value > 0 {
+				scaleValue[j] = sortYh[i].Value
+				break
 			}
 		}
 	}
-
 	//incase maxValue as 0
-	for i := 0; i < len(maxValue); i++ {
-		if maxValue[i] == 0.0 {
-			maxValue[i] = 1.0
+	for i := 0; i < len(scaleValue); i++ {
+		if scaleValue[i] == 0.0 {
+			scaleValue[i] = 1.0
 		}
 	}
-	fmt.Println(maxValue)
+	//fmt.Println(scaleValue)
 
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nCol; j++ {
-			value := data.At(i, j) / maxValue[j]
-			if value > 1.0 {
-				scaleData.Set(i, j, 1.0)
-			} else {
-				scaleData.Set(i, j, data.At(i, j)/maxValue[j])
-			}
+			value := data.At(i, j) / scaleValue[j]
+			//if value > 1.0 {
+			//	scaleData.Set(i, j, 1.0)
+			//} else {
+			scaleData.Set(i, j, value)
+			//}
 		}
 	}
 	return scaleData
@@ -506,15 +514,15 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
 	return binYh
 }
 
-func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp int, fp int, fn int, tn int) {
-	type kv struct {
-		Key   int
-		Value float64
-	}
+func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64, tp int, fp int, fn int, tn int) {
+	//type kv struct {
+	//	Key   int
+	//	Value float64
+	//}
 	n := Y.Len()
 	mapY := make(map[int]int)
 	//skipY := make(map[int]int)
-	var sortYh []kv
+	//var sortYh []kv
 	for i := 0; i < n; i++ {
 		if Y.At(i, 0) == 1.0 {
 			mapY[i] = 1
@@ -522,18 +530,18 @@ func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp
 		//if Ys.At(i, 0) == 1.0 {
 		//	skipY[i] = 1
 		//}
-		ele := Yh.At(i, 0)
-		if math.IsNaN(ele) {
-			sortYh = append(sortYh, kv{i, 0.0})
-		} else {
-			sortYh = append(sortYh, kv{i, Yh.At(i, 0)})
-		}
+		//ele := Yh.At(i, 0)
+		//if math.IsNaN(ele) {
+		//	sortYh = append(sortYh, kv{i, 0.0})
+		//} else {
+		//	sortYh = append(sortYh, kv{i, Yh.At(i, 0)})
+		//}
 	}
-	sort.Slice(sortYh, func(i, j int) bool {
-		return sortYh[i].Value > sortYh[j].Value
-	})
+	//sort.Slice(sortYh, func(i, j int) bool {
+	//	return sortYh[i].Value > sortYh[j].Value
+	//})
 	//o based index, thus -1
-	thres := sortYh[rankCut-1].Value
+	//thres := sortYh[rankCut-1].Value
 	//var tp int
 	//var fp int
 	//var fn int
@@ -575,6 +583,19 @@ func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, rankCut int) (F1 float64, tp
 	}
 	return F1, tp, fp, fn, tn
 }
+func ComputeAccuracy(tsYdata *mat64.Dense, Yhat *mat64.Dense) (accuracy float64) {
+	nRow, nCol := tsYdata.Caps()
+	count := 0.0
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nCol; j++ {
+			if Yhat.At(i, j) == 1.0 && tsYdata.At(i, j) == 1.0 {
+				count += 1.0
+			}
+		}
+	}
+	accuracy = count / float64(nRow)
+	return accuracy
+}
 func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
 	_, nLabel := tsYdata.Caps()
 	sumAupr := 0.0
@@ -595,7 +616,7 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	//bin with rankCut
 	tsYhat = BinPredByAlpha(tsYhat, rankCut)
 	for i := 0; i < nLabel; i++ {
-		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
+		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), 0.99)
 		sumF1 += f1
 		sumTp += tp
 		sumFp += fp
@@ -609,4 +630,79 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	macroAupr = sumAupr / float64(nLabel)
 
 	return microF1, accuracy, macroAupr, microAupr
+}
+
+func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
+	//F1 score
+	_, nLabel := tsYdata.Caps()
+	sumAupr := 0.0
+	sumF1 := 0.0
+	sumTp := 0
+	sumFp := 0
+	sumFn := 0
+	sumTn := 0
+	tpSet := make([]int, 0)
+	fpSet := make([]int, 0)
+	fnSet := make([]int, 0)
+	tnSet := make([]int, 0)
+	macroAuprSet := make([]float64, 0)
+	microF1Set := make([]float64, 0)
+	tsYhat = ColScale(tsYhat, rebaData)
+	//macroAupr
+	for i := 0; i < nLabel; i++ {
+		aupr := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		macroAuprSet = append(macroAuprSet, aupr)
+		sumAupr += aupr
+	}
+	macroAupr = sumAupr / float64(nLabel)
+	//y-flat and microAupr
+	tsYdataVec := Flat(tsYdata)
+	tsYhatVec := Flat(tsYhat)
+	microAupr = ComputeAupr(tsYdataVec, tsYhatVec)
+	//microF1
+	tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
+	for i := 0; i < nLabel; i++ {
+		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 0.99)
+		if isVerbose {
+			tpSet = append(tpSet, tp)
+			fpSet = append(fpSet, fp)
+			fnSet = append(fnSet, fn)
+			tnSet = append(tnSet, tn)
+		}
+		microF1Set = append(microF1Set, f1)
+		sumF1 += f1
+		sumTp += tp
+		sumFp += fp
+		sumFn += fn
+		sumTn += tn
+	}
+	p := float64(sumTp) / (float64(sumTp) + float64(sumFp))
+	r := float64(sumTp) / (float64(sumTp) + float64(sumFn))
+	microF1 = 2.0 * p * r / (p + r)
+	//accuracy
+	tsYhatAccuracy := BinPredByAlpha(tsYhat, 1)
+	accuracy = ComputeAccuracy(tsYdata, tsYhatAccuracy)
+	if isVerbose {
+		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "label", "tp", "fp", "fn", "tn", "F1", "AUPR")
+		for i := 0; i < nLabel; i++ {
+			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i])
+		}
+	}
+	return microF1, accuracy, macroAupr, microAupr
+}
+
+func RebalanceData(trYdata *mat64.Dense) (rebaData *mat64.Dense) {
+	nRow, nCol := trYdata.Caps()
+	rebaData = mat64.NewDense(1, nCol, nil)
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nCol; j++ {
+			if trYdata.At(i, j) == 1.0 {
+				rebaData.Set(0, j, rebaData.At(0, j)+1.0)
+			}
+		}
+	}
+	for i := 0; i < nCol; i++ {
+		rebaData.Set(0, i, rebaData.At(0, i)/float64(nRow))
+	}
+	return rebaData
 }

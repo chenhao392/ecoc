@@ -136,18 +136,19 @@ Sample usages:
 			os.Exit(0)
 		}
 		//split training data for nested cv
-		idxPerm := rand.Perm(nTr)
+		folds := src.SOIS(trYdata, nFold)
+		//idxPerm := rand.Perm(nTr)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
 
 		for f := 0; f < nFold; f++ {
-			fmt.Println("5, fold:", f)
+			//fmt.Println("5, fold:", f)
 			cvTrain := make([]int, 0)
 			cvTest := make([]int, 0)
 			cvTestMap := map[int]int{}
-			for j := f * nTr / nFold; j < (f+1)*nTr/nFold-1; j++ {
-				cvTest = append(cvTest, idxPerm[j])
-				cvTestMap[idxPerm[j]] = idxPerm[j]
+			for j := 0; j < len(folds[f]); j++ {
+				cvTest = append(cvTest, folds[f][j])
+				cvTestMap[folds[f][j]] = folds[f][j]
 			}
 			//the rest is for training
 			for j := 0; j < nTr; j++ {
@@ -175,20 +176,28 @@ Sample usages:
 				//idIdx as gene -> idx in net
 				fmt.Println(inNetworkFile[i])
 				network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
-				sPriorData := mat64.NewDense(0, 0, nil)
+				//sPriorData := mat64.NewDense(0, 0, nil)
 				//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 				if priorMatrixFiles == "" {
-					sPriorData, _ = src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, &wg, &mutex)
+					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, &wg, &mutex)
+					_, nTrLabel := trYdataCV.Caps()
 					_, nLabel := sPriorData.Caps()
 					tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
 					//TO BE FIX for adding trY label to trX
 					//trX
-					for k := 0; k < len(trRowName); k++ {
-						for l := 0; l < nLabel; l++ {
-							_, exist := idIdx[trRowName[k]]
-							if exist {
-								tmpTrXdata.Set(k, l, sPriorData.At(idIdx[trRowName[k]], l))
+					cLabel := 0
+					for l := 0; l < nTrLabel; l++ {
+						if ind[l] > 1 {
+							for k := 0; k < len(trRowName); k++ {
+								_, exist := idIdx[trRowName[k]]
+								if exist {
+									tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
+								}
+								if trYdata.At(k, l) == 1.0 {
+									tmpTrXdata.Set(k, cLabel, 1.0)
+								}
 							}
+							cLabel += 1
 						}
 					}
 					nRow, _ := trXdataCV.Caps()
@@ -200,16 +209,25 @@ Sample usages:
 				} else {
 					for j := 0; j < len(priorMatrixFile); j++ {
 						priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-						sPriorData, _ = src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataCV, idIdx, idxToId, trRowNameCV, trGeneMapCV, &wg, &mutex)
+						sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataCV, idIdx, idxToId, trRowNameCV, trGeneMapCV, &wg, &mutex)
+						_, nTrLabel := trYdataCV.Caps()
 						_, nLabel := sPriorData.Caps()
 						tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
 						//trX
-						for k := 0; k < len(trRowName); k++ {
-							for l := 0; l < nLabel; l++ {
-								_, exist := idIdx[trRowName[k]]
-								if exist {
-									tmpTrXdata.Set(k, l, sPriorData.At(idIdx[trRowName[k]], l))
+						cLabel := 0
+						for l := 0; l < nTrLabel; l++ {
+							if ind[l] > 1 {
+								for k := 0; k < len(trRowName); k++ {
+									//for l := 0; l < nLabel; l++ {
+									_, exist := idIdx[trRowName[k]]
+									if exist {
+										tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
+									}
+									if trYdata.At(k, l) == 1.0 {
+										tmpTrXdata.Set(k, cLabel, 1.0)
+									}
 								}
+								cLabel += 1
 							}
 						}
 						nRow, _ := trXdataCV.Caps()
@@ -258,11 +276,13 @@ Sample usages:
 		fmt.Println("pass ecoc")
 		for i := 0; i < nFold; i++ {
 			YhSet := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
+			rebaData := src.RebalanceData(trainFold[i].Y)
+
 			//update all meassures
 			c := 0
 			for m := 0; m < nK; m++ {
 				for n := 0; n < len(sigmaFctsSet); n++ {
-					microF1, accuracy, macroAupr, microAupr := src.Single_compute(testFold[i].Y, YhSet[c], rankCut)
+					microF1, accuracy, macroAupr, microAupr := src.Report(testFold[i].Y, YhSet[c], rebaData, rankCut, false)
 					trainF1.Set(c, 0, float64(kSet[m]))
 					trainF1.Set(c, 1, sigmaFctsSet[n])
 					trainF1.Set(c, 2, trainF1.At(c, 2)+1.0)
@@ -299,11 +319,12 @@ Sample usages:
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
 		YhSet := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		rebaData := src.RebalanceData(trYdata)
 		//corresponding testing measures
 		c := 0
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
-			microF1, accuracy, macroAupr, microAupr := src.Single_compute(tsYdata, YhSet[c], rankCut)
+			microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
 			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -342,6 +363,8 @@ Sample usages:
 		src.WriteFile(oFile, testMicroAupr)
 		oFile = "./" + resFolder + "/test.probMatrix.txt"
 		src.WriteFile(oFile, YhSet[0])
+		oFile = "./" + resFolder + "/rebalance.scale.txt"
+		src.WriteFile(oFile, rebaData)
 		os.Exit(0)
 
 	},

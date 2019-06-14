@@ -74,12 +74,12 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 	//}
 	//Mutex.Unlock()
 }
-func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
+func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
-	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), nFold, nFea, nTr, randValues, idxPerm)
+	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
 	mutex.Lock()
 	sigma.Set(0, i, math.Sqrt(optMSE))
-	fmt.Println("at", i)
+	//fmt.Println("at", i)
 	//bias term for tsXdata added before
 	element := mat64.NewDense(0, 0, nil)
 	element.Mul(tsXdataB, beta)
@@ -95,6 +95,8 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	YhSet = make(map[int]*mat64.Dense)
 	colSum, trYdata := posFilter(trYdata)
 	tsYdata = posSelect(tsYdata, colSum)
+	//SOIS stratification
+	folds := SOIS(trYdata, nFold)
 	//vars
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
@@ -122,7 +124,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	trXdataB := colStack(trXdata, ones)
 	//step 1
 	for i := 0; i < nLabel; i++ {
-		wMat, _, _ := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), nFold, nFea)
+		wMat, _, _ := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), folds, nFold, nFea)
 		element := mat64.NewDense(0, 0, nil)
 		element.Mul(tsXdataB, wMat)
 		for j := 0; j < nTs; j++ {
@@ -159,11 +161,11 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//for workers
 	randValues := RandListFromUniDist(nTr)
 	idxPerm := rand.Perm(nTr)
-	_, nCol := trY_Cdata.Caps()
-	fmt.Println("nCol:", nCol, "nLabel:", nLabel)
+	//_, nCol := trY_Cdata.Caps()
+	//fmt.Println("nCol:", nCol, "nLabel:", nLabel)
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
-		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
+		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
 	}
 	wg.Wait()
 	fmt.Println("pass step 3 cg decoding\n")
@@ -189,32 +191,32 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//fmt.Println(len(YhSet))
 	return YhSet
 }
-func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64) {
+func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64) {
 	//lamda := []float64{0.1, 1, 10}
 	//err := []float64{0, 0, 0}
 	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	nY := Y.Len()
 	//index positive and megetive examples
-	posIndex := make([]int, 0)
-	negIndex := make([]int, 0)
-	for i := 0; i < nY; i++ {
-		if Y.At(i, 0) == 1 {
-			posIndex = append(posIndex, i)
-		} else {
-			negIndex = append(negIndex, i)
-		}
-	}
-	nPos := len(posIndex)
-	nNeg := len(negIndex)
+	//posIndex := make([]int, 0)
+	//negIndex := make([]int, 0)
+	//for i := 0; i < nY; i++ {
+	//	if Y.At(i, 0) == 1 {
+	//		posIndex = append(posIndex, i)
+	//	} else {
+	//		negIndex = append(negIndex, i)
+	//	}
+	//}
+	//nPos := len(posIndex)
+	//nNeg := len(negIndex)
 	//nFold == 1 skippped for noe
-	if nFold == 1 {
-		panic("nFold == 1 not implemetned yet.")
-	}
+	//if nFold == 1 {
+	//	panic("nFold == 1 not implemetned yet.")
+	//}
 	trainFold := make([]CvFold, nFold)
 	testFold := make([]CvFold, nFold)
-	posCvSet := cvSplit(nPos, nFold)
-	negCvSet := cvSplit(nNeg, nFold)
+	//posCvSet := cvSplit(nPos, nFold)
+	//negCvSet := cvSplit(nNeg, nFold)
 	for i := 0; i < nFold; i++ {
 		posTrain := make([]int, 0)
 		negTrain := make([]int, 0)
@@ -223,25 +225,27 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 		posTestMap := map[int]int{}
 		negTestMap := map[int]int{}
 		//test set and map
-		for j := 0; j < len(posCvSet[i]); j++ {
-			posTest = append(posTest, posIndex[posCvSet[i][j]])
-			posTestMap[posCvSet[i][j]] = posIndex[posCvSet[i][j]]
-		}
-		for j := 0; j < len(negCvSet[i]); j++ {
-			negTest = append(negTest, negIndex[negCvSet[i][j]])
-			negTestMap[negCvSet[i][j]] = negIndex[negCvSet[i][j]]
-		}
-		//the rest is for training
-		for j := 0; j < nPos; j++ {
-			_, exist := posTestMap[j]
-			if !exist {
-				posTrain = append(posTrain, posIndex[j])
+		for j := 0; j < len(folds[i]); j++ {
+			if Y.At(folds[i][j], 0) == 1.0 {
+				posTest = append(posTest, folds[i][j])
+				posTestMap[folds[i][j]] = folds[i][j]
+			} else {
+				negTest = append(negTest, folds[i][j])
+				negTestMap[folds[i][j]] = folds[i][j]
 			}
 		}
-		for j := 0; j < nNeg; j++ {
-			_, exist := negTestMap[j]
-			if !exist {
-				negTrain = append(negTrain, negIndex[j])
+		//the rest is for training
+		for j := 0; j < nY; j++ {
+			if Y.At(j, 0) == 1.0 {
+				_, exist := posTestMap[j]
+				if !exist {
+					posTrain = append(posTrain, j)
+				}
+			} else {
+				_, exist := negTestMap[j]
+				if !exist {
+					negTrain = append(negTrain, j)
+				}
 			}
 		}
 		trainFold[i].setXY(posTrain, negTrain, X, Y)
@@ -285,7 +289,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeatur
 	errFinal = err[idx]
 	return wMat, regulator, errFinal
 }
-func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
+func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
 	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	//lamda := []float64{0.1, 1, 10}
@@ -301,9 +305,9 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, nFold int, nFe
 		cvTest := make([]int, 0)
 		cvTestMap := map[int]int{}
 		//for j := i * nTr / nFold; j < (i+1)*nTr/nFold-1; j++ {
-		for j := i; j < nTr; j += nFold {
-			cvTest = append(cvTest, idxPerm[j])
-			cvTestMap[idxPerm[j]] = idxPerm[j]
+		for j := 0; j < len(folds[i]); j++ {
+			cvTest = append(cvTest, folds[i][j])
+			cvTestMap[folds[i][j]] = folds[i][j]
 		}
 		//the rest is for training
 		for j := 0; j < nTr; j++ {
