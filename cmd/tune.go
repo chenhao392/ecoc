@@ -194,7 +194,10 @@ Sample usages:
 									tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
 								}
 								if trYdata.At(k, l) == 1.0 {
-									tmpTrXdata.Set(k, cLabel, 1.0)
+									_, exist2 := cvTestMap[k]
+									if !exist2 {
+										tmpTrXdata.Set(k, cLabel, 1.0)
+									}
 								}
 							}
 							cLabel += 1
@@ -224,7 +227,10 @@ Sample usages:
 										tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
 									}
 									if trYdata.At(k, l) == 1.0 {
-										tmpTrXdata.Set(k, cLabel, 1.0)
+										_, exist2 := cvTestMap[k]
+										if !exist2 {
+											tmpTrXdata.Set(k, cLabel, 1.0)
+										}
 									}
 								}
 								cLabel += 1
@@ -380,7 +386,7 @@ func init() {
 	tuneCmd.PersistentFlags().String("res", "resultEcoc", "resultFolder")
 
 	tuneCmd.PersistentFlags().String("n", "data/hs_exp_net.txt", "network file")
-	tuneCmd.PersistentFlags().String("p", "", "prior/known gene file")
+	tuneCmd.PersistentFlags().String("p", "", "additional prior file")
 	tuneCmd.PersistentFlags().Int("t", 48, "number of threads")
 	tuneCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
 	tuneCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")

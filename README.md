@@ -1,19 +1,22 @@
-Pathway prediction
+ECOC following "Guilt by association principle"
 
-This is a pathway prediction pipeline following "Guilt by association" principle. The following prior information will be integrated.
+This is an semi-supervised multi-label learning toolbox using "Error Correction of Code" ensemble framework.
+Following "Guilt by association" principle. Many prior information can be integrated, such as the followings.
 
--phylogenetic profiles across species
+*phylogenetic profiles across species
+*expression profiles across tissue types
+*GO semantic similarities in one species corpus
+*protein-protein interactions
+*genetic interactions
+*positive selection pressure across closely related species
 
--expression profiles across tissue types
+The toolbox is written in Golang and Cobra with the following sub-commands.
 
--GO semantic similarities
-
-Golang
-
-the follwing components are to implemented.
-
--fast pearson correlation coefficient calculation for large matrix.
-
--base learner generater using pathway definition and prior matrix.
-
--ensemble learning framework.
+*cals
+  *fast pearson correlation coefficient calculation for large matrix.
+*tune
+  *automatic hyper-parameter tuning and testing.
+*pred
+  *predict labels for a feature dataset with given hyper-parameters.
+*report
+  *print prediction result in detail.

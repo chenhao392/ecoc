@@ -452,15 +452,24 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 
 func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []string, idIdx map[string]int, tsXdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, ind []int) (tsXdata1 *mat64.Dense, trXdata1 *mat64.Dense) {
 	_, nLabel := sPriorData.Caps()
+	_, nTrLabel := trYdata.Caps()
 	tmpTsXdata := mat64.NewDense(len(tsRowName), nLabel, nil)
 	tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
 	//tsX
-	for k := 0; k < len(tsRowName); k++ {
-		for l := 0; l < nLabel; l++ {
-			_, exist := idIdx[tsRowName[k]]
-			if exist {
-				tmpTsXdata.Set(k, l, sPriorData.At(idIdx[tsRowName[k]], l))
+	cLabel := 0
+	for l := 0; l < nTrLabel; l++ {
+		if ind[l] > 1 {
+			for k := 0; k < len(tsRowName); k++ {
+				_, exist := idIdx[tsRowName[k]]
+				if exist {
+					tmpTsXdata.Set(k, cLabel, sPriorData.At(idIdx[tsRowName[k]], cLabel))
+				}
+				if trYdata.At(k, l) == 1.0 {
+					tmpTrXdata.Set(k, cLabel, 1.0)
+				}
 			}
+			cLabel += 1
+
 		}
 	}
 	nRow, _ := tsXdata.Caps()
@@ -471,25 +480,30 @@ func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []s
 	}
 	//trX
 	//l as trYdata cols, pL as priorData cols
-	pL := 0
-	for l := 0; l < len(ind); l++ {
-		if ind[l] > 0 {
-			//pL always 1 larger than actural index
-			pL += 1
-		} else {
-			//skip trY idx not used in priorData
-			continue
-		}
-		for k := 0; k < len(trRowName); k++ {
-			_, exist := idIdx[trRowName[k]]
-			if exist {
-				if trYdata.At(k, l) == 1.0 {
-					tmpTrXdata.Set(k, pL-1, 1.0)
-				} else {
-					//mod l
-					tmpTrXdata.Set(k, pL-1, sPriorData.At(idIdx[trRowName[k]], pL-1))
+	//pL := 0
+
+	cLabel = 0
+	//for l := 0; l < len(ind); l++ {
+	//if ind[l] > 1 {
+	//pL always 1 larger than actural index
+	//pL += 1
+	//} else {
+	//skip trY idx not used in priorData
+	//	continue
+	//}
+	for l := 0; l < nTrLabel; l++ {
+		if ind[l] > 1 {
+			for k := 0; k < len(trRowName); k++ {
+				_, exist := idIdx[trRowName[k]]
+				if exist {
+					if trYdata.At(k, l) == 1.0 {
+						tmpTrXdata.Set(k, cLabel, 1.0)
+					} else {
+						tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
+					}
 				}
 			}
+			cLabel += 1
 		}
 	}
 	nRow, _ = trXdata.Caps()
