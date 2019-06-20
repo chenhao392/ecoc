@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"runtime"
 	"sync"
 	//"os"
 )
@@ -188,6 +189,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 
 	//}
 	wg.Wait()
+	runtime.GC()
 	//fmt.Println(len(YhSet))
 	return YhSet
 }

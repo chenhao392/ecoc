@@ -190,3 +190,30 @@ func WriteFile(outFile string, data *mat64.Dense) (err error) {
 	wr.Flush()
 	return err
 }
+
+func WriteNetwork(outFile string, data *mat64.Dense, idxToId map[int]string) (err error) {
+	file, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer file.Close()
+	wr := bufio.NewWriterSize(file, 192000)
+	nRow, nCol := data.Caps()
+	var ele string
+	for i := 0; i < nRow; i++ {
+		for j := i + 1; j < nCol; j++ {
+			if data.At(i, j) > 0 {
+				wr.WriteString(idxToId[i])
+				wr.WriteString("\t")
+				wr.WriteString(idxToId[j])
+				wr.WriteString("\t")
+				ele = strconv.FormatFloat(data.At(i, j), 'f', 6, 64)
+				wr.WriteString(ele)
+				wr.WriteString("\n")
+			}
+		}
+	}
+	wr.Flush()
+	return err
+}

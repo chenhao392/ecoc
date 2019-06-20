@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
+	"runtime"
 	"sort"
 	"sync"
 )
@@ -84,13 +85,14 @@ func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]i
 					trY.Set(idIdx[idArr[i]], 0, trYdata.At(i, j))
 				}
 			}
-			prior := mat64.DenseCopyOf(trY)
-			go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, c, wg, mutex)
+			//prior := mat64.DenseCopyOf(trY)
+			go single_sPriorData(network, sPriorData, trY, trY, nNetworkGene, c, wg, mutex)
 			//go single_sPriorDataDada(network, sPriorData, prior,trY, nNetworkGene, c)
 			c += 1
 		}
 	}
 	wg.Wait()
+	runtime.GC()
 	return sPriorData, ind
 }
 
@@ -145,6 +147,7 @@ func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, p
 		}
 	}
 	wg.Wait()
+	runtime.GC()
 	return sPriorData, ind
 }
 func single_sPriorData(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, trY *mat64.Dense, nNetworkGene int, c int, wg *sync.WaitGroup, mutex *sync.Mutex) {
@@ -409,8 +412,8 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 		restart.Set(i, 0, inPrior.At(i, 0)/sum)
 		prior.Set(i, 0, inPrior.At(i, 0)/sum)
 	}
-	thres := 0.0000000001
-	maxIter := 1000
+	thres := 0.000001
+	maxIter := 100
 	i := 0
 	res := 1.0
 	for res > thres && i < maxIter {
@@ -426,15 +429,7 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 		}
 		i += 1
 	}
-	//var sortMap []kv
-	//for i := 0; i < r; i++ {
-	//	sortMap = append(sortMap, kv{i, prior.At(i, 0)})
-	//}
-	//sort.Slice(sortMap, func(i, j int) bool {
-	//	return sortMap[i].Value > sortMap[j].Value
-	//})
 
-	//thres = sortMap[50].Value
 	max := 0.0
 	for i := 0; i < r; i++ {
 		if prior.At(i, 0) > max {
@@ -443,9 +438,7 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense) (smoot
 	}
 
 	for i := 0; i < r; i++ {
-		//	if prior.At(i, 0) < thres {
 		prior.Set(i, 0, prior.At(i, 0)/max)
-		//	}
 	}
 	return prior
 }

@@ -82,6 +82,7 @@ Sample usages:
   ecoc tune -trY training_label -tsY test_label -n net_file1,net_file2 -p prior_file1,prior_file2`,
 
 	Run: func(cmd *cobra.Command, args []string) {
+		src.PrintMemUsage()
 		//tsX, _ := cmd.Flags().GetString("tsX")
 		tsY, _ := cmd.Flags().GetString("tsY")
 		//trX, _ := cmd.Flags().GetString("trX")
@@ -113,13 +114,17 @@ Sample usages:
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		for i := 0; i < len(inNetworkFile); i++ {
+			src.PrintMemUsage()
 			//idIdx as gene -> idx in net
 			fmt.Println(inNetworkFile[i])
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
+			src.PrintMemUsage()
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 			if priorMatrixFiles == "" {
 				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, &wg, &mutex)
+				src.PrintMemUsage()
 				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+				src.PrintMemUsage()
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
@@ -135,13 +140,16 @@ Sample usages:
 			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
+		src.PrintMemUsage()
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold)
 		//idxPerm := rand.Perm(nTr)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
+		src.PrintMemUsage()
 
 		for f := 0; f < nFold; f++ {
+			src.PrintMemUsage()
 			//fmt.Println("5, fold:", f)
 			cvTrain := make([]int, 0)
 			cvTest := make([]int, 0)
@@ -281,6 +289,7 @@ Sample usages:
 		}
 		fmt.Println("pass ecoc")
 		for i := 0; i < nFold; i++ {
+			src.PrintMemUsage()
 			YhSet := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
 			rebaData := src.RebalanceData(trainFold[i].Y)
 
@@ -320,6 +329,7 @@ Sample usages:
 		sort.Slice(sortMap, func(i, j int) bool {
 			return sortMap[i].Value > sortMap[j].Value
 		})
+		src.PrintMemUsage()
 		//best training aupr
 		cBest := sortMap[0].Key
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
@@ -371,6 +381,7 @@ Sample usages:
 		src.WriteFile(oFile, YhSet[0])
 		oFile = "./" + resFolder + "/rebalance.scale.txt"
 		src.WriteFile(oFile, rebaData)
+		src.PrintMemUsage()
 		os.Exit(0)
 
 	},
@@ -385,7 +396,7 @@ func init() {
 	tuneCmd.PersistentFlags().String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
 	tuneCmd.PersistentFlags().String("res", "resultEcoc", "resultFolder")
 
-	tuneCmd.PersistentFlags().String("n", "data/hs_exp_net.txt", "network file")
+	tuneCmd.PersistentFlags().String("n", "data/hs_db_net.txt,data/hs_fus_net.txt", "network file")
 	tuneCmd.PersistentFlags().String("p", "", "additional prior file")
 	tuneCmd.PersistentFlags().Int("t", 48, "number of threads")
 	tuneCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
