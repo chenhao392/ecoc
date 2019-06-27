@@ -57,8 +57,8 @@ var diagCmd = &cobra.Command{
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 
-		kSet := []int{1}
-		sigmaFctsSet := []float64{1.0}
+		kSet := []int{9}
+		sigmaFctsSet := []float64{10000}
 		//sigmaFctsSet := []float64{0.01, 1, 100.0}
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)

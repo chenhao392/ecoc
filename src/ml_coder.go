@@ -2,16 +2,16 @@ package src
 
 import (
 	"fmt"
-	linear "github.com/chenhao392/lineargo"
+	//linear "github.com/chenhao392/lineargo"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
 	"gonum.org/v1/gonum/stat/distuv"
 	"log"
 	"math"
 	"math/rand"
+	//"os"
 	"runtime"
 	"sync"
-	//"os"
 )
 
 func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, tsYdata *mat64.Dense, rankCut int, minDims int, YhSet map[int]*mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
@@ -23,75 +23,31 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 	for i := 0; i < nTs; i++ {
 		//the doc seems to be old, (0,x] seems to be correct
 		//dim checked to be correct
+		//tsY_Prob_slice := tsY_Prob.Slice(i, i+1, 0, nLabel)
 		tsY_Prob_slice := tsY_Prob.Slice(i, i+1, 0, nLabel)
 		tsY_C_slice := tsY_C.Slice(i, i+1, 0, k)
 		arr := IOC_MFADecoding(nTs, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
+		//arr := IOC_MFADecoding(nTs, tsY_Prob_slice, tsY_C_slice, sigma, Bsub, k, sigmaFcts, nLabel)
 		tsYhat.SetRow(i, arr)
 	}
 	mutex.Lock()
-	//fmt.Println("set:", c, tsYhat.At(0, 0))
 	YhSet[c] = tsYhat
-	//return tsYhat
 	mutex.Unlock()
-	//if !isGridSearch {
-	//	sFctStr := strconv.FormatFloat(sigmaFcts, 'f', 3, 64)
-	//	kStr := strconv.FormatInt(int64(k), 16)
-	//	oFile := "./" + resFolder + "/k" + kStr + "sFct" + sFctStr + ".txt"
-	//	writeFile(oFile, tsYhat)
-	//}
-	//score
-	//Mutex.Lock()
-	//sumF1 := 0.0
-	//sumAupr := 0.0
-	//for i := 0; i < nLabel; i++ {
-	//	f1, tp, fp, fn, tn := computeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), rankCut)
-	//	aupr := computeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
-	//	if outPerLabel {
-	//		sumResF1.Set(c, i, f1)
-	//		sumResAupr.Set(c, i, aupr)
-	//	}
-	//	sumResContingency.Set(0, 0, sumResContingency.At(0, 0)+float64(tp))
-	//	sumResContingency.Set(0, 1, sumResContingency.At(0, 1)+float64(fp))
-	//	sumResContingency.Set(0, 2, sumResContingency.At(0, 2)+float64(fn))
-	//	sumResContingency.Set(0, 3, sumResContingency.At(0, 3)+float64(tn))
-	//	sumF1 += f1
-	//	sumAupr += aupr
-	//}
-	//if isGridSearch {
-	//	macroF1.Set(c, 0, float64(k))
-	//	macroF1.Set(c, 1, sigmaFcts)
-	//	macroF1.Set(c, 2, macroF1.At(c, 2)+1.0)
-	//	macroF1.Set(c, 3, sumF1/float64(nLabel)+macroF1.At(c, 3))
-	//
-	//	microAupr.Set(c, 0, sumResContingency.At(0, 0)+microAupr.At(c, 0))
-	//	microAupr.Set(c, 1, sumResContingency.At(0, 1)+microAupr.At(c, 1))
-	//	microAupr.Set(c, 2, sumResContingency.At(0, 2)+microAupr.At(c, 2))
-	//	microAupr.Set(c, 3, sumResContingency.At(0, 3)+microAupr.At(c, 3))
-	//
-	//	meanAupr.Set(c, 0, float64(k))
-	//	meanAupr.Set(c, 1, sigmaFcts)
-	//	meanAupr.Set(c, 2, meanAupr.At(c, 2)+1.0)
-	//	meanAupr.Set(c, 3, sumAupr/float64(nLabel)+meanAupr.At(c, 3))
-	//}
-	//Mutex.Unlock()
 }
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
 	mutex.Lock()
 	sigma.Set(0, i, math.Sqrt(optMSE))
-	//fmt.Println("at", i)
 	//bias term for tsXdata added before
 	element := mat64.NewDense(0, 0, nil)
 	element.Mul(tsXdataB, beta)
 	for j := 0; j < nTs; j++ {
 		tsY_C.Set(j, i, element.At(j, 0))
 	}
-	//fmt.Println(i, lamda, sigma)
 	mutex.Unlock()
 }
 
-//func ecocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut *int, reg *bool, kSet []int, sigmaFctsSet []float64, sumResF1 *mat64.Dense, sumResAupr *mat64.Dense, sumResContingency *mat64.Dense, microAupr *mat64.Dense, macroF1 *mat64.Dense, meanAupr *mat64.Dense, nFold int, nK int, resFolder string, outPerLabel bool, isGridSearch bool) (err error) {
 func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, sigmaFctsSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense) {
 	YhSet = make(map[int]*mat64.Dense)
 	colSum, trYdata := posFilter(trYdata)
@@ -123,20 +79,29 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		ones[i] = 1
 	}
 	trXdataB := colStack(trXdata, ones)
+	regM := mat64.NewDense(1, nLabel, nil)
 	//step 1
 	for i := 0; i < nLabel; i++ {
-		wMat, _, _ := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), folds, nFold, nFea)
+		wMat, regular, _, label := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), folds, nFold, nFea)
 		element := mat64.NewDense(0, 0, nil)
+		regM.Set(0, i, regular)
 		element.Mul(tsXdataB, wMat)
 		for j := 0; j < nTs; j++ {
-			//the -1*element.At() is changed to 1*element.At() in this implementation
-			//the sign was flipped in this golang library, as manually checked
-			value := 1.0 / (1 + math.Exp(1*element.At(j, 0)))
-			tsY_Prob.Set(j, i, value)
+			//the -1*element.At() is not making much sense, as the label would be 0/1
+			//according to the origical LIBLINEAR doc
+			//the sign is determined by the label. label 1 would be -1 * weight, label 0 would be weight
+			if label == 1 {
+				value := 1.0 / (1 + math.Exp(-1*element.At(j, 0)))
+				tsY_Prob.Set(j, i, value)
+			} else {
+				value := 1.0 / (1 + math.Exp(1*element.At(j, 0)))
+				tsY_Prob.Set(j, i, value)
+			}
 		}
+		//fmt.Println(i, label)
 	}
 	fmt.Println("pass step 1 coding\n")
-
+	//os.Exit(0)
 	//cca
 	B := mat64.NewDense(0, 0, nil)
 	if !reg {
@@ -163,7 +128,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	randValues := RandListFromUniDist(nTr)
 	idxPerm := rand.Perm(nTr)
 	//_, nCol := trY_Cdata.Caps()
-	//fmt.Println("nCol:", nCol, "nLabel:", nLabel)
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
 		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
@@ -172,53 +136,34 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	fmt.Println("pass step 3 cg decoding\n")
 	//decoding and step 4
 	c := 0
-	//if isGridSearch {
 	wg.Add(nK * len(sigmaFctsSet))
 	for k := 0; k < nK; k++ {
 		Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[k]))
 		for s := 0; s < len(sigmaFctsSet); s++ {
-			//fmt.Println(k, s, c)
 			go single_IOC_MFADecoding_and_result(nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, tsYdata, rankCut, minDims, YhSet, wg, mutex)
 			c += 1
 		}
 	}
-	//} else {
-	//wg.Add(1)
-	//Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[0]))
-	//go single_IOC_MFADecoding_and_result(outPerLabel, isGridSearch, nTs, kSet[0], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[0], nLabel, sumResF1, macroF1, sumResAupr, sumResContingency, microAupr, meanAupr, tsYdata, *rankCut, minDims, resFolder)
-
-	//}
 	wg.Wait()
 	runtime.GC()
-	//fmt.Println(len(YhSet))
+	oFile := "./sigma.txt"
+	WriteFile(oFile, sigma)
+	oFile = "./reg.txt"
+	WriteFile(oFile, regM)
 	return YhSet
 }
-func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64) {
+func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64, label int) {
 	//lamda := []float64{0.1, 1, 10}
 	//err := []float64{0, 0, 0}
-	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	//lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	lamda := []float64{0.000000001, 0.00000001, 0.0000001, 0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000}
+	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	nY := Y.Len()
-	//index positive and megetive examples
-	//posIndex := make([]int, 0)
-	//negIndex := make([]int, 0)
-	//for i := 0; i < nY; i++ {
-	//	if Y.At(i, 0) == 1 {
-	//		posIndex = append(posIndex, i)
-	//	} else {
-	//		negIndex = append(negIndex, i)
-	//	}
-	//}
-	//nPos := len(posIndex)
-	//nNeg := len(negIndex)
-	//nFold == 1 skippped for noe
-	//if nFold == 1 {
-	//	panic("nFold == 1 not implemetned yet.")
-	//}
+
 	trainFold := make([]CvFold, nFold)
 	testFold := make([]CvFold, nFold)
-	//posCvSet := cvSplit(nPos, nFold)
-	//negCvSet := cvSplit(nNeg, nFold)
+
 	for i := 0; i < nFold; i++ {
 		posTrain := make([]int, 0)
 		negTrain := make([]int, 0)
@@ -260,45 +205,63 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 			//doc in the lineargo lib: If you do not want to change penalty for any of the classes, just set classWeights to nil.
 			//So yes for this implementation, as the penalty not mentioned in matlab code
 			//X: features, Y:label vector, bias,solver,cost,sensitiveness,stop,class_pelnalty
-			LRmodel := linear.Train(trainFold[j].X, trainFold[j].Y, 1.0, 0, 1.0/lamda[i], 0.1, 0.0001, nil)
+			LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 0, 1.0/lamda[i], 0.1, 0.0001, nil)
+			//LRmodel := linear.Train(trainFold[j].X, trainFold[j].Y, 1.0, 0, 1.0/lamda[i], 0.1, 0.00000001, nil)
 			w := LRmodel.W()
 			lastW := []float64{Pop(&w)}
 			w = append(lastW, w...)
+			//fLabel := LRmodel.Label()
+			//if fLabel == 1 {
+			//	for k := 0; k < len(w); k++ {
+			//		w[k] = w[k] * -1
+			//	}
+			//}
 			wMat := mat64.NewDense(len(w), 1, w)
 			e := 1.0 - computeF1(testFold[j].X, testFold[j].Y, wMat)
 			err[i] = err[i] + e
 		}
 		err[i] = err[i] / float64(nFold)
-		//fmt.Println("to choose lamda", lamda[i], err[i])
 	}
 	//min error index
 	idx := minIdx(err)
 	regulator = 1.0 / lamda[idx]
-	//fmt.Println("choose: ", idx, lamda[idx], regulator)
 	Ymat := mat64.NewDense(Y.Len(), 1, nil)
 	for i := 0; i < Y.Len(); i++ {
 		Ymat.Set(i, 0, Y.At(i, 0))
 	}
-	LRmodel := linear.Train(X, Ymat, 1.0, 0, regulator, 0.1, 0.0001, nil)
+	LRmodel := Train(X, Ymat, 1.0, 0, regulator, 0.1, 0.0001, nil)
+	//LRmodel := linear.Train(X, Ymat, 1.0, 0, regulator, 0.1, 0.00000001, nil)
 	w := LRmodel.W()
 	lastW := []float64{Pop(&w)}
 	w = append(lastW, w...)
 	wMat = mat64.NewDense(len(w), 1, w)
+	label = LRmodel.Label()
+	//fmt.Println(label)
+	//fmt.Println(wMat)
+	//os.Exit(0)
 	//defer C.free(unsafe.Pointer(LRmodel))
 	//nr_feature := LRmodel.Nfeature() + 1
 	//w := []float64{-1}
 	//w = append(w, LRmodel.W()...)
 	errFinal = err[idx]
-	return wMat, regulator, errFinal
+	return wMat, regulator, errFinal, label
 }
 func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
+	//lamda := []float64{0.000000000001, 0.000000000004, 0.00000000001, 0.00000000004, 0.0000000001, 0.0000000004, 0.000000001, 0.000000004, 0.00000001, 0.00000004, 0.0000001, 0.0000004, 0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	//lamda := []float64{0.01, 0.1, 1, 10, 100, 1000, 10000}
+	//err := []float64{0.01, 0, 0, 0, 0, 0, 0}
+	//lamda := make([]float64, 0)
+	//err := make([]float64, 0)
+	//for i := -3.0; i < 6.0; i += 0.25 {
+	//	lamda = append(lamda, math.Pow(10, i))
+	//	err = append(err, 0)
+	//}
+
 	//lamda := []float64{0.1, 1, 10}
 	//err := []float64{0, 0, 0}
-	//idxPerm 0:nTr, value as random order nTr
-	//rand.Seed(1)
-	//idxPerm := rand.Perm(nTr)
 	//cv folds data
 	trainFold := make([]CvFold, nFold)
 	testFold := make([]CvFold, nFold)
@@ -306,7 +269,6 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int]
 		cvTrain := make([]int, 0)
 		cvTest := make([]int, 0)
 		cvTestMap := map[int]int{}
-		//for j := i * nTr / nFold; j < (i+1)*nTr/nFold-1; j++ {
 		for j := 0; j < len(folds[i]); j++ {
 			cvTest = append(cvTest, folds[i][j])
 			cvTestMap[folds[i][j]] = folds[i][j]
@@ -343,7 +305,6 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int]
 			err[j] = err[j] + mean
 		}
 		err[j] = err[j] / float64(nFold)
-		//fmt.Println("error for", lamda[j], "is", err[j])
 
 	}
 	//min error index
@@ -351,7 +312,7 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int]
 	optMSE = err[idx]
 	regulazor = lamda[idx]
 	//beta is weights
-	//convert Y yo Ymat
+	//convert Y to Ymat
 	nY := Y.Len()
 	Ymat := mat64.NewDense(nY, 1, nil)
 	for i := 0; i < nY; i++ {
@@ -468,7 +429,6 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float
 	//weight
 	weights = mat64.NewDense(p, 1, nil)
 	preWeights := mat64.NewDense(p, 1, nil)
-	//rand.Seed(1)
 	for k := 0; k < p; k++ {
 		//value := UformDist.Rand()
 		weights.Set(k, 0, randValues[k])
@@ -538,6 +498,10 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 	for i := 0; i < k; i++ {
 		sigmaSub.Set(0, i, sigma.At(0, i)*sigmaFcts)
 	}
+	//for i := 0; i < k; i++ {
+	//	sigmaSub.Set(0, i, sigma.At(0, i)*math.Exp((float64(k)-10.0)/(31.416)))
+	//}
+
 	//ind
 	ind := make([]int, nLabel)
 	for i := 0; i < nLabel; i++ {
@@ -584,6 +548,8 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 		}
 		logPos = logPos - posSum
 		logNeg = logNeg - negSum
+		//logPos = sigmaFcts*logPos - posSum
+		//logNeg = sigmaFcts*logNeg - negSum
 		preQi := Q.At(0, i)
 		newQi := math.Exp(logPos) / (math.Exp(logPos) + math.Exp(logNeg))
 		Q.Set(0, i, newQi)
@@ -630,6 +596,8 @@ func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense,
 	for i := 0; i < k; i++ {
 		value := Bsub.At(j, i) * Q.At(0, j)
 		newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(0, i)*Bsub.At(j, i)*Q.At(0, j))
+		//value := Bsub.At(j, i) * Bsub.At(j, i) * Q.At(0, j)
+		//newNegFct.Set(0, i, negFct.At(0, i)+value-2*tsY_C.At(0, i)*Bsub.At(j, i)*Q.At(0, j))
 	}
 	return newNegFct
 }

@@ -224,6 +224,7 @@ func ColScale(data *mat64.Dense, rebaData *mat64.Dense) (scaleData *mat64.Dense)
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nCol; j++ {
 			value := data.At(i, j) / scaleValue[j]
+			//value := data.At(i, j)
 			//if value > 1.0 {
 			//	scaleData.Set(i, j, 1.0)
 			//} else {
