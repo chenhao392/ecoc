@@ -98,7 +98,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 				tsY_Prob.Set(j, i, value)
 			}
 		}
-		//fmt.Println(i, label)
 	}
 	fmt.Println("pass step 1 coding\n")
 	//os.Exit(0)
@@ -127,7 +126,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//for workers
 	randValues := RandListFromUniDist(nTr)
 	idxPerm := rand.Perm(nTr)
-	//_, nCol := trY_Cdata.Caps()
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
 		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
@@ -146,10 +144,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	}
 	wg.Wait()
 	runtime.GC()
-	oFile := "./sigma.txt"
-	WriteFile(oFile, sigma)
-	oFile = "./reg.txt"
-	WriteFile(oFile, regM)
 	return YhSet
 }
 func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64, label int) {

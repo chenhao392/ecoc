@@ -37,14 +37,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//type kv struct {
-//	Key   int
-//	Value float64
-//}
-
-//var wg sync.WaitGroup
-//var mutex sync.Mutex
-
 // tuneCmd represents the tune command
 var tuneCmd = &cobra.Command{
 	Use:   "tune",
@@ -83,9 +75,7 @@ Sample usages:
 
 	Run: func(cmd *cobra.Command, args []string) {
 		src.PrintMemUsage()
-		//tsX, _ := cmd.Flags().GetString("tsX")
 		tsY, _ := cmd.Flags().GetString("tsY")
-		//trX, _ := cmd.Flags().GetString("trX")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
 		priorMatrixFiles, _ := cmd.Flags().GetString("p")
@@ -95,9 +85,8 @@ Sample usages:
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 
-		kSet := []int{1, 2, 4, 6, 8, 10, 12, 14, 16}
+		kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 		sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0, 40000.0, 1000000.0}
-		//sigmaFctsSet := []float64{0.01, 1, 100.0}
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
 		//read data
@@ -114,17 +103,13 @@ Sample usages:
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		for i := 0; i < len(inNetworkFile); i++ {
-			src.PrintMemUsage()
 			//idIdx as gene -> idx in net
 			fmt.Println(inNetworkFile[i])
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
-			src.PrintMemUsage()
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 			if priorMatrixFiles == "" {
-				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, &wg, &mutex)
-				src.PrintMemUsage()
+				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, false, 0.2, &wg, &mutex)
 				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
-				src.PrintMemUsage()
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
@@ -140,7 +125,6 @@ Sample usages:
 			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
-		src.PrintMemUsage()
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold)
 		//idxPerm := rand.Perm(nTr)
@@ -149,8 +133,6 @@ Sample usages:
 		src.PrintMemUsage()
 
 		for f := 0; f < nFold; f++ {
-			src.PrintMemUsage()
-			//fmt.Println("5, fold:", f)
 			cvTrain := make([]int, 0)
 			cvTest := make([]int, 0)
 			cvTestMap := map[int]int{}
@@ -182,16 +164,12 @@ Sample usages:
 			//codes
 			for i := 0; i < len(inNetworkFile); i++ {
 				//idIdx as gene -> idx in net
-				fmt.Println(inNetworkFile[i])
 				network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
-				//sPriorData := mat64.NewDense(0, 0, nil)
-				//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 				if priorMatrixFiles == "" {
-					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, &wg, &mutex)
+					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, false, 0.2, &wg, &mutex)
 					_, nTrLabel := trYdataCV.Caps()
 					_, nLabel := sPriorData.Caps()
 					tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
-					//TO BE FIX for adding trY label to trX
 					//trX
 					cLabel := 0
 					for l := 0; l < nTrLabel; l++ {
@@ -201,10 +179,11 @@ Sample usages:
 								if exist {
 									tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
 								}
+								//adding trY label as max value to trX
 								if trYdata.At(k, l) == 1.0 {
 									_, exist2 := cvTestMap[k]
 									if !exist2 {
-										tmpTrXdata.Set(k, cLabel, 1.0)
+										tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
 									}
 								}
 							}
@@ -237,7 +216,7 @@ Sample usages:
 									if trYdata.At(k, l) == 1.0 {
 										_, exist2 := cvTestMap[k]
 										if !exist2 {
-											tmpTrXdata.Set(k, cLabel, 1.0)
+											tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
 										}
 									}
 								}
@@ -319,17 +298,16 @@ Sample usages:
 			}
 		}
 
-		//sort by meanAupr
+		//sort by microAupr
 		var sortMap []kv
 		n, _ := trainMicroAupr.Caps()
 		for i := 0; i < n; i++ {
 			sortMap = append(sortMap, kv{i, trainMicroAupr.At(i, 3)})
-			//sortMap = append(sortMap, kv{i, macroF1.At(i, 3) / macroF1.At(i, 2)})
 		}
 		sort.Slice(sortMap, func(i, j int) bool {
 			return sortMap[i].Value > sortMap[j].Value
 		})
-		src.PrintMemUsage()
+
 		//best training aupr
 		cBest := sortMap[0].Key
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
@@ -381,7 +359,6 @@ Sample usages:
 		src.WriteFile(oFile, YhSet[0])
 		oFile = "./" + resFolder + "/rebalance.scale.txt"
 		src.WriteFile(oFile, rebaData)
-		src.PrintMemUsage()
 		os.Exit(0)
 
 	},
@@ -390,9 +367,7 @@ Sample usages:
 func init() {
 	rootCmd.AddCommand(tuneCmd)
 
-	//tuneCmd.PersistentFlags().String("tsX", "", "test FeatureSet")
 	tuneCmd.PersistentFlags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
-	//tuneCmd.PersistentFlags().String("trX", "", "train FeatureSet")
 	tuneCmd.PersistentFlags().String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
 	tuneCmd.PersistentFlags().String("res", "resultEcoc", "resultFolder")
 

@@ -58,7 +58,7 @@ func DNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	normNet.Mul(term1, d)
 	return normNet, n
 }
-func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
+func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, isDada bool, alpha float64, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
 	network, nNetworkGene := dNorm(network)
 	//nPriorGene, nPriorLabel := priorData.Caps()
 	nTrGene, nTrLabel := trYdata.Caps()
@@ -100,9 +100,12 @@ func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]i
 					trY.Set(idIdx[idArr[i]], 0, trYdata.At(i, j)/float64(ind[j]))
 				}
 			}
-			//prior := mat64.DenseCopyOf(trY)
-			go single_sPriorData(network, sPriorData, trY, trY, nNetworkGene, c, wg, mutex)
-			//go single_sPriorDataDada(network, sPriorData, prior,trY, nNetworkGene, c)
+			prior := mat64.DenseCopyOf(trY)
+			if isDada {
+				go single_sPriorDataDada(network, sPriorData, prior, trY, nNetworkGene, alpha, c, wg, mutex)
+			} else {
+				go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, alpha, c, wg, mutex)
+			}
 			c += 1
 		}
 	}
@@ -156,7 +159,7 @@ func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, p
 				}
 			}
 			prior := addPrior(priorData, priorGeneID, priorIdxToId, trY, idIdx, idxToId, kBest, nNetworkGene)
-			go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, c, wg, mutex)
+			go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, 0.6, c, wg, mutex)
 			//go single_sPriorDataDada(network, sPriorData, prior,trY, nNetworkGene, c)
 			c += 1
 		}
@@ -165,25 +168,20 @@ func PropagateSetWithPrior(priorData *mat64.Dense, priorGeneID map[string]int, p
 	runtime.GC()
 	return sPriorData, ind
 }
-func single_sPriorData(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, trY *mat64.Dense, nNetworkGene int, c int, wg *sync.WaitGroup, mutex *sync.Mutex) {
+func single_sPriorData(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, trY *mat64.Dense, nNetworkGene int, alpha float64, c int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	//n by 1 matrix
-	sPrior1 := propagate(network, 0.6, prior, trY)
+	sPrior1 := propagate(network, alpha, prior, trY)
 	mutex.Lock()
 	for i := 0; i < nNetworkGene; i++ {
-		//if trY.At(i, 0) == 1.0 {
-		//	sPriorData.Set(i, c, 1.0)
-		//} else {
-		//value := sPrior1.At(i, 0)
 		sPriorData.Set(i, c, sPrior1.At(i, 0))
-		//}
 	}
 	mutex.Unlock()
 }
-func single_sPriorDataDada(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, trY *mat64.Dense, nNetworkGene int, c int, wg sync.WaitGroup, mutex sync.Mutex) {
+func single_sPriorDataDada(network *mat64.Dense, sPriorData *mat64.Dense, prior *mat64.Dense, trY *mat64.Dense, nNetworkGene int, alpha float64, c int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	//n by 1 matrix
-	sPrior1 := propagate(network, 0.6, prior, trY)
+	sPrior1 := propagate(network, alpha, prior, trY)
 	sPrior2 := propagate(network, 1.0, prior, trY)
 	max := 0.0
 	for i := 0; i < nNetworkGene; i++ {
@@ -449,31 +447,49 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense, trY *m
 		i += 1
 	}
 
-	//max := 0.0
-	//for i := 0; i < r; i++ {
-	//if prior.At(i, 0) > max && trY.At(i, 0) == 0.0 {
-	//	if prior.At(i, 0) > max {
-	//		max = prior.At(i, 0)
-	//	}
-	//}
-
-	//for i := 0; i < r; i++ {
-	//if trY.At(i, 0) == 1.0 {
-	//	prior.Set(i, 0, 1.0)
-	//} else {
-	//	prior.Set(i, 0, prior.At(i, 0)/max)
-	//}
-	//}
+	max := 0.0
+	for i := 0; i < r; i++ {
+		//if prior.At(i, 0) > max && trY.At(i, 0) == 0.0 {
+		if prior.At(i, 0) > max {
+			max = prior.At(i, 0)
+		}
+		//}
+	}
+	if max == 0.0 {
+		max = 1.0
+	}
+	for i := 0; i < r; i++ {
+		if trY.At(i, 0) == 1.0 {
+			prior.Set(i, 0, 1.0)
+		} else {
+			prior.Set(i, 0, prior.At(i, 0)/max)
+		}
+	}
 	return prior
 }
 
 func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []string, idIdx map[string]int, tsXdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, ind []int) (tsXdata1 *mat64.Dense, trXdata1 *mat64.Dense) {
 	nPriorGene, nLabel := sPriorData.Caps()
+	//nTrLabel might be more than nLabel as it can be filterred
 	_, nTrLabel := trYdata.Caps()
 	tmpTsXdata := mat64.NewDense(len(tsRowName), nLabel, nil)
 	tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
 	//tsX
 	cLabel := 0
+	for l := 0; l < nTrLabel; l++ {
+		if ind[l] > 1 {
+			for k := 0; k < len(tsRowName); k++ {
+				_, exist := idIdx[tsRowName[k]]
+				if exist {
+					tmpTsXdata.Set(k, cLabel, sPriorData.At(idIdx[tsRowName[k]], cLabel)/float64(ind[l]))
+				}
+			}
+			cLabel += 1
+
+		}
+	}
+	//trX
+	cLabel = 0
 	for l := 0; l < nTrLabel; l++ {
 		if ind[l] > 1 {
 			max := 0.0
@@ -482,61 +498,26 @@ func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []s
 					max = sPriorData.At(k, cLabel)
 				}
 			}
-			for k := 0; k < len(tsRowName); k++ {
-				_, exist := idIdx[tsRowName[k]]
-				if exist {
-					tmpTsXdata.Set(k, cLabel, sPriorData.At(idIdx[tsRowName[k]], cLabel))
-				}
-				if trYdata.At(k, l) == 1.0 {
-					//tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
-					tmpTrXdata.Set(k, cLabel, max)
-				}
-			}
-			cLabel += 1
-
-		}
-	}
-	nRow, _ := tsXdata.Caps()
-	if nRow == 0 {
-		tsXdata = tmpTsXdata
-	} else {
-		tsXdata = ColStackMatrix(tsXdata, tmpTsXdata)
-	}
-	//trX
-	//l as trYdata cols, pL as priorData cols
-	//pL := 0
-
-	cLabel = 0
-	//for l := 0; l < len(ind); l++ {
-	//if ind[l] > 1 {
-	//pL always 1 larger than actural index
-	//pL += 1
-	//} else {
-	//skip trY idx not used in priorData
-	//	continue
-	//}
-	for l := 0; l < nTrLabel; l++ {
-		if ind[l] > 1 {
 			for k := 0; k < len(trRowName); k++ {
 				_, exist := idIdx[trRowName[k]]
 				if exist {
 					if trYdata.At(k, l) == 1.0 {
 						tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
 					} else {
-						tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
+						tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
 					}
 				}
 			}
 			cLabel += 1
 		}
 	}
-	nRow, _ = trXdata.Caps()
+	nRow, _ := tsXdata.Caps()
 	if nRow == 0 {
+		tsXdata = tmpTsXdata
 		trXdata = tmpTrXdata
 	} else {
+		tsXdata = ColStackMatrix(tsXdata, tmpTsXdata)
 		trXdata = ColStackMatrix(trXdata, tmpTrXdata)
 	}
-	tsXdata1 = tsXdata
-	trXdata1 = trXdata
-	return tsXdata1, trXdata1
+	return tsXdata, trXdata
 }

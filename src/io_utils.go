@@ -168,12 +168,14 @@ func lcCount(filename string) (lc int, cc int, err error) {
 }
 
 func WriteFile(outFile string, data *mat64.Dense) (err error) {
-	file, err := os.OpenFile(outFile, os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(outFile, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	defer file.Close()
+	file.Truncate(0)
+	file.Seek(0, 0)
 	wr := bufio.NewWriterSize(file, 192000)
 	nRow, nCol := data.Caps()
 	var ele string

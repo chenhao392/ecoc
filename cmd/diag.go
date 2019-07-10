@@ -26,7 +26,7 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"strings"
+	//"strings"
 	"sync"
 	//"unsafe"
 	"github.com/chenhao392/ecoc/src"
@@ -49,8 +49,8 @@ var diagCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
-		inNetworkFiles, _ := cmd.Flags().GetString("n")
-		priorMatrixFiles, _ := cmd.Flags().GetString("p")
+		tsX, _ := cmd.Flags().GetString("tsX")
+		trX, _ := cmd.Flags().GetString("trX")
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		rankCut, _ := cmd.Flags().GetInt("c")
@@ -63,39 +63,11 @@ var diagCmd = &cobra.Command{
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
 		//read data
-		tsYdata, tsRowName, _, _ := src.ReadFile(tsY, true, true)
-		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
-		tsXdata := mat64.NewDense(0, 0, nil)
-		trXdata := mat64.NewDense(0, 0, nil)
-		// for filtering prior genes, only those in training set are used for propagation
-		trGeneMap := make(map[string]int)
-		for i := 0; i < len(trRowName); i++ {
-			trGeneMap[trRowName[i]] = i
-		}
-		//network
-		inNetworkFile := strings.Split(inNetworkFiles, ",")
-		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
-		for i := 0; i < len(inNetworkFile); i++ {
-			//idIdx as gene -> idx in net
-			fmt.Println(inNetworkFile[i])
-			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
-			if priorMatrixFiles == "" {
-				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, &wg, &mutex)
-				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
-			} else {
-				for j := 0; j < len(priorMatrixFile); j++ {
-					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, &wg, &mutex)
-					tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
-				}
-			}
-		}
-		_, nFea := trXdata.Caps()
-		_, nLabel := trYdata.Caps()
-		if nFea < nLabel {
-			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
-			os.Exit(0)
-		}
+		tsYdata, _, _, _ := src.ReadFile(tsY, true, true)
+		trYdata, _, _, _ := src.ReadFile(trY, true, true)
+		tsXdata, _, _, _ := src.ReadFile(tsX, false, false)
+		trXdata, _, _, _ := src.ReadFile(trX, false, false)
+
 		//run
 		YhSet := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
 		rebaData := src.RebalanceData(trYdata)
@@ -137,17 +109,17 @@ var diagCmd = &cobra.Command{
 		}
 
 		//result file.
-		oFile := "./" + resFolder + "/cvTesting.microF1.txt"
+		oFile := "./" + resFolder + ".cvTesting.microF1.txt"
 		src.WriteFile(oFile, testF1)
-		oFile = "./" + resFolder + "/cvTesting.accuracy.txt"
+		oFile = "./" + resFolder + ".cvTesting.accuracy.txt"
 		src.WriteFile(oFile, testAccuracy)
-		oFile = "./" + resFolder + "/cvTesting.macroAupr.txt"
+		oFile = "./" + resFolder + ".cvTesting.macroAupr.txt"
 		src.WriteFile(oFile, testMacroAupr)
-		oFile = "./" + resFolder + "/cvTesting.microAupr.txt"
+		oFile = "./" + resFolder + ".cvTesting.microAupr.txt"
 		src.WriteFile(oFile, testMicroAupr)
-		oFile = "./" + resFolder + "/test.probMatrix.txt"
+		oFile = "./" + resFolder + ".test.probMatrix.txt"
 		src.WriteFile(oFile, YhSet[0])
-		oFile = "./" + resFolder + "/rebalance.scale.txt"
+		oFile = "./" + resFolder + ".rebalance.scale.txt"
 		src.WriteFile(oFile, rebaData)
 		os.Exit(0)
 	},
@@ -155,14 +127,12 @@ var diagCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(diagCmd)
-	//diagCmd.PersistentFlags().String("tsX", "", "test FeatureSet")
+	diagCmd.PersistentFlags().String("tsX", "", "test FeatureSet")
 	diagCmd.PersistentFlags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
-	//diagCmd.PersistentFlags().String("trX", "", "train FeatureSet")
+	diagCmd.PersistentFlags().String("trX", "", "train FeatureSet")
 	diagCmd.PersistentFlags().String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
 	diagCmd.PersistentFlags().String("res", "resultDiag", "resultFolder")
 
-	diagCmd.PersistentFlags().String("n", "data/hs_exp_net.txt", "network file")
-	diagCmd.PersistentFlags().String("p", "", "prior/known gene file")
 	diagCmd.PersistentFlags().Int("t", 48, "number of threads")
 	diagCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
 	diagCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
