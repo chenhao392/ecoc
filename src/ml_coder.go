@@ -24,10 +24,10 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 		//the doc seems to be old, (0,x] seems to be correct
 		//dim checked to be correct
 		//tsY_Prob_slice := tsY_Prob.Slice(i, i+1, 0, nLabel)
-		tsY_Prob_slice := tsY_Prob.Slice(i, i+1, 0, nLabel)
-		tsY_C_slice := tsY_C.Slice(i, i+1, 0, k)
-		arr := IOC_MFADecoding(nTs, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
-		//arr := IOC_MFADecoding(nTs, tsY_Prob_slice, tsY_C_slice, sigma, Bsub, k, sigmaFcts, nLabel)
+		//tsY_Prob_slice := tsY_Prob.Slice(i, i+1, 0, nLabel)
+		//tsY_C_slice := tsY_C.Slice(i, i+1, 0, k)
+		//arr := IOC_MFADecoding(nTs, mat64.DenseCopyOf(tsY_Prob_slice), mat64.DenseCopyOf(tsY_C_slice), sigma, Bsub, k, sigmaFcts, nLabel)
+		arr := IOC_MFADecoding(nTs, i, tsY_Prob, tsY_C, sigma, Bsub, k, sigmaFcts, nLabel)
 		tsYhat.SetRow(i, arr)
 	}
 	mutex.Lock()
@@ -481,11 +481,11 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float
 	return weights
 }
 
-func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, k int, sigmaFcts float64, nLabel int) (tsYhatData []float64) {
+func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, k int, sigmaFcts float64, nLabel int) (tsYhatData []float64) {
 	//Q
 	Q := mat64.NewDense(1, nLabel, nil)
 	for i := 0; i < nLabel; i++ {
-		Q.Set(0, i, tsY_Prob.At(0, i))
+		Q.Set(0, i, tsY_Prob.At(rowIdx, i))
 	}
 	//sigma and B for top k elements
 	sigmaSub := mat64.NewDense(1, k, nil)
@@ -504,15 +504,15 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 	//init index
 	i := 0
 	for ind[i] > 0 {
-		logPos := math.Log(tsY_Prob.At(0, i))
-		logNeg := math.Log(1 - tsY_Prob.At(0, i))
+		logPos := math.Log(tsY_Prob.At(rowIdx, i))
+		logNeg := math.Log(1 - tsY_Prob.At(rowIdx, i))
 		posFct := mat64.NewDense(1, k, nil)
 		negFct := mat64.NewDense(1, k, nil)
 		for j := 0; j < nLabel; j++ {
 			if j == i || Q.At(0, j) == 0 {
 				continue
 			}
-			negFct = fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j)
+			negFct = fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j, rowIdx)
 			//second order, n is j2, golang is 0 based, so that the for loop is diff on max
 			for n := 0; n < j; n++ {
 				if n == i || Q.At(0, n) == 0 {
@@ -525,8 +525,8 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 		}
 		//terms outside loop
 		for l := 0; l < k; l++ {
-			negFct.Set(0, l, negFct.At(0, l)+tsY_C.At(0, l)*tsY_C.At(0, l))
-			value := Bsub.At(i, l)*Bsub.At(i, l) - 2*tsY_C.At(0, l)*Bsub.At(i, l)
+			negFct.Set(0, l, negFct.At(0, l)+tsY_C.At(rowIdx, l)*tsY_C.At(rowIdx, l))
+			value := Bsub.At(i, l)*Bsub.At(i, l) - 2*tsY_C.At(rowIdx, l)*Bsub.At(i, l)
 			posFct.Set(0, l, posFct.At(0, l)+negFct.At(0, l)+value)
 		}
 		//sigma is full nLabel length, but only top k used in the loop
@@ -584,14 +584,14 @@ func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sig
 	return tsYhatData
 }
 
-func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int) (newNegFct *mat64.Dense) {
+func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, rowIdx int) (newNegFct *mat64.Dense) {
 	_, k := negFct.Caps()
 	newNegFct = mat64.NewDense(1, k, nil)
 	for i := 0; i < k; i++ {
 		value := Bsub.At(j, i) * Q.At(0, j)
-		newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(0, i)*Bsub.At(j, i)*Q.At(0, j))
+		newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
 		//value := Bsub.At(j, i) * Bsub.At(j, i) * Q.At(0, j)
-		//newNegFct.Set(0, i, negFct.At(0, i)+value-2*tsY_C.At(0, i)*Bsub.At(j, i)*Q.At(0, j))
+		//newNegFct.Set(0, i, negFct.At(0, i)+value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
 	}
 	return newNegFct
 }

@@ -139,7 +139,7 @@ func init() {
 	diagCmd.PersistentFlags().Int("t", 48, "number of threads")
 	diagCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
 	diagCmd.PersistentFlags().Int("k", 9, "number of CCA dims")
-	diagCmd.PersistentFlags().Int("s", 10000.0, "1/lamda^2")
+	diagCmd.PersistentFlags().Float64("s", 10000.0, "1/lamda^2")
 	diagCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
 	diagCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
 }
