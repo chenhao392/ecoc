@@ -84,6 +84,9 @@ Sample usages:
 		rankCut, _ := cmd.Flags().GetInt("c")
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
+		isDada, _ := cmd.Flags().GetBool("ec")
+		alpha, _ := cmd.Flags().GetFloat64("alpha")
+		isAddPrior, _ := cmd.Flags().GetBool("addPrior")
 
 		kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 		sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0, 40000.0, 1000000.0}
@@ -104,16 +107,16 @@ Sample usages:
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		for i := 0; i < len(inNetworkFile); i++ {
 			//idIdx as gene -> idx in net
-			fmt.Println(inNetworkFile[i])
+			//fmt.Println(inNetworkFile[i])
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
-			if priorMatrixFiles == "" {
-				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, false, 0.2, &wg, &mutex)
+			if !isAddPrior {
+				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
 				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, &wg, &mutex)
+					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
 					tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 				}
 			}
@@ -130,7 +133,6 @@ Sample usages:
 		//idxPerm := rand.Perm(nTr)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
-		src.PrintMemUsage()
 
 		for f := 0; f < nFold; f++ {
 			cvTrain := make([]int, 0)
@@ -165,7 +167,7 @@ Sample usages:
 			for i := 0; i < len(inNetworkFile); i++ {
 				//idIdx as gene -> idx in net
 				network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
-				if priorMatrixFiles == "" {
+				if !isAddPrior {
 					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, false, 0.2, &wg, &mutex)
 					_, nTrLabel := trYdataCV.Caps()
 					_, nLabel := sPriorData.Caps()
@@ -199,7 +201,7 @@ Sample usages:
 				} else {
 					for j := 0; j < len(priorMatrixFile); j++ {
 						priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-						sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataCV, idIdx, idxToId, trRowNameCV, trGeneMapCV, &wg, &mutex)
+						sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataCV, idIdx, idxToId, trRowNameCV, trGeneMapCV, isDada, alpha, &wg, &mutex)
 						_, nTrLabel := trYdataCV.Caps()
 						_, nLabel := sPriorData.Caps()
 						tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
@@ -208,7 +210,6 @@ Sample usages:
 						for l := 0; l < nTrLabel; l++ {
 							if ind[l] > 1 {
 								for k := 0; k < len(trRowName); k++ {
-									//for l := 0; l < nLabel; l++ {
 									_, exist := idIdx[trRowName[k]]
 									if exist {
 										tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
@@ -372,9 +373,12 @@ func init() {
 	tuneCmd.PersistentFlags().String("res", "resultEcoc", "resultFolder")
 
 	tuneCmd.PersistentFlags().String("n", "data/hs_db_net.txt,data/hs_fus_net.txt", "network file")
-	tuneCmd.PersistentFlags().String("p", "", "additional prior file")
+	tuneCmd.PersistentFlags().String("p", "", "addtional prior file, use together with addPrior flag")
 	tuneCmd.PersistentFlags().Int("t", 48, "number of threads")
 	tuneCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
 	tuneCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
+	tuneCmd.PersistentFlags().Bool("addPrior", false, "adding additional priors, default false")
 	tuneCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
+	tuneCmd.Flags().Float64("alpha", 0.2, "alpha for propgation, default 0.6")
+	tuneCmd.Flags().Bool("ec", false, "ec method for propgation, default false")
 }

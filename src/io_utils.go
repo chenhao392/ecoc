@@ -200,6 +200,8 @@ func WriteNetwork(outFile string, data *mat64.Dense, idxToId map[int]string) (er
 		return
 	}
 	defer file.Close()
+	file.Truncate(0)
+	file.Seek(0, 0)
 	wr := bufio.NewWriterSize(file, 192000)
 	nRow, nCol := data.Caps()
 	var ele string

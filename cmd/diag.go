@@ -56,10 +56,13 @@ var diagCmd = &cobra.Command{
 		rankCut, _ := cmd.Flags().GetInt("c")
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
+		k, _ := cmd.Flags().GetInt("k")
+		s, _ := cmd.Flags().GetFloat64("s")
 
-		kSet := []int{9}
-		sigmaFctsSet := []float64{10000}
-		//sigmaFctsSet := []float64{0.01, 1, 100.0}
+		kSet := make([]int, 0)
+		sigmaFctsSet := make([]float64, 0)
+		kSet = append(kSet, k)
+		sigmaFctsSet = append(sigmaFctsSet, s)
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
 		//read data
@@ -135,6 +138,8 @@ func init() {
 
 	diagCmd.PersistentFlags().Int("t", 48, "number of threads")
 	diagCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
+	diagCmd.PersistentFlags().Int("k", 9, "number of CCA dims")
+	diagCmd.PersistentFlags().Int("s", 10000.0, "1/lamda^2")
 	diagCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
 	diagCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
 }
