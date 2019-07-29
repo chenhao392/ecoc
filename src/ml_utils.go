@@ -3,6 +3,7 @@ package src
 import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
+	"gonum.org/v1/gonum/stat"
 	"math"
 	"math/rand"
 	"os"
@@ -113,7 +114,7 @@ func posFilter(trYdata *mat64.Dense) (colSum *mat64.Vector, trYdataFilter *mat64
 	return colSum, trYdataFilter
 }
 
-func posSelect(tsYdata *mat64.Dense, colSum *mat64.Vector) (tsYdataFilter *mat64.Dense) {
+func PosSelect(tsYdata *mat64.Dense, colSum *mat64.Vector) (tsYdataFilter *mat64.Dense) {
 	r, c := tsYdata.Caps()
 	nCol := 0
 	for j := 0; j < c; j++ {
@@ -648,6 +649,7 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, ra
 	tnSet := make([]int, 0)
 	macroAuprSet := make([]float64, 0)
 	microF1Set := make([]float64, 0)
+	//tsYhat = Zscore(tsYhat)
 	tsYhat = ColScale(tsYhat, rebaData)
 	//macroAupr
 	for i := 0; i < nLabel; i++ {
@@ -706,4 +708,19 @@ func RebalanceData(trYdata *mat64.Dense) (rebaData *mat64.Dense) {
 		rebaData.Set(0, i, rebaData.At(0, i)/float64(nRow))
 	}
 	return rebaData
+}
+func Zscore(data *mat64.Dense) (scaleData *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	scaleData = mat64.NewDense(nRow, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		colData := make([]float64, nRow)
+		for i := 0; i < nRow; i++ {
+			colData[i] = data.At(i, j)
+		}
+		mean, sd := stat.MeanStdDev(colData, nil)
+		for i := 0; i < nRow; i++ {
+			scaleData.Set(i, j, stat.StdScore(data.At(i, j), mean, sd)/4)
+		}
+	}
+	return scaleData
 }

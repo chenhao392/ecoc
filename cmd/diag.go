@@ -72,7 +72,9 @@ var diagCmd = &cobra.Command{
 		trXdata, _, _, _ := src.ReadFile(trX, false, false)
 
 		//run
-		YhSet := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		trYdata = src.PosSelect(trYdata, colSum)
+		tsYdata = src.PosSelect(tsYdata, colSum)
 		rebaData := src.RebalanceData(trYdata)
 		//measures
 		testF1 := mat64.NewDense(1, 4, nil)

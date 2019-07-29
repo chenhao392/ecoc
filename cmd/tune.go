@@ -88,8 +88,6 @@ Sample usages:
 		alpha, _ := cmd.Flags().GetFloat64("alpha")
 		isAddPrior, _ := cmd.Flags().GetBool("addPrior")
 
-		kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-		sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0, 40000.0, 1000000.0}
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
 		//read data
@@ -107,7 +105,7 @@ Sample usages:
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		for i := 0; i < len(inNetworkFile); i++ {
 			//idIdx as gene -> idx in net
-			//fmt.Println(inNetworkFile[i])
+			fmt.Println(inNetworkFile[i])
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 			if !isAddPrior {
@@ -124,12 +122,38 @@ Sample usages:
 
 		_, nFea := trXdata.Caps()
 		nTr, nLabel := trYdata.Caps()
+		fmt.Println(nFea)
 		if nFea < nLabel {
 			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
+		sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0, 40000.0, 1000000.0}
+		//kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		kSet := make([]int, 0)
+		for i := 5; i <= 95; i += 10 {
+			k := nLabel * i / 100
+			if k > 0 {
+				kSet = append(kSet, k)
+			}
+		}
+
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold)
+		for i := 0; i < 5; i++ {
+			nPos := make([]int, nLabel)
+			for j := 0; j < nLabel; j++ {
+				for k := 0; k < len(folds[i]); k++ {
+					if trYdata.At(folds[i][k], j) == 1 {
+						nPos[j] += 1
+					}
+				}
+			}
+			for j := 0; j < nLabel; j++ {
+				fmt.Printf("\t%d", nPos[j])
+			}
+			fmt.Printf("\n")
+		}
+		//os.Exit(0)
 		//idxPerm := rand.Perm(nTr)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
@@ -168,7 +192,7 @@ Sample usages:
 				//idIdx as gene -> idx in net
 				network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 				if !isAddPrior {
-					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, false, 0.2, &wg, &mutex)
+					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, isDada, alpha, &wg, &mutex)
 					_, nTrLabel := trYdataCV.Caps()
 					_, nLabel := sPriorData.Caps()
 					tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
@@ -179,13 +203,13 @@ Sample usages:
 							for k := 0; k < len(trRowName); k++ {
 								_, exist := idIdx[trRowName[k]]
 								if exist {
-									tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
-								}
-								//adding trY label as max value to trX
-								if trYdata.At(k, l) == 1.0 {
-									_, exist2 := cvTestMap[k]
-									if !exist2 {
-										tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
+									tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
+									//adding trY label as max value to trX
+									if trYdata.At(k, l) == 1.0 {
+										_, exist2 := cvTestMap[k]
+										if !exist2 {
+											tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
+										}
 									}
 								}
 							}
@@ -212,12 +236,12 @@ Sample usages:
 								for k := 0; k < len(trRowName); k++ {
 									_, exist := idIdx[trRowName[k]]
 									if exist {
-										tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
-									}
-									if trYdata.At(k, l) == 1.0 {
-										_, exist2 := cvTestMap[k]
-										if !exist2 {
-											tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
+										tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
+										if trYdata.At(k, l) == 1.0 {
+											_, exist2 := cvTestMap[k]
+											if !exist2 {
+												tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
+											}
 										}
 									}
 								}
@@ -267,17 +291,19 @@ Sample usages:
 			fmt.Println(err)
 			return
 		}
+
 		fmt.Println("pass ecoc")
 		for i := 0; i < nFold; i++ {
-			src.PrintMemUsage()
-			YhSet := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
-			rebaData := src.RebalanceData(trainFold[i].Y)
+			YhSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
+			trYfold := src.PosSelect(trainFold[i].Y, colSum)
+			tsYfold := src.PosSelect(testFold[i].Y, colSum)
+			rebaData := src.RebalanceData(trYfold)
 
 			//update all meassures
 			c := 0
 			for m := 0; m < nK; m++ {
 				for n := 0; n < len(sigmaFctsSet); n++ {
-					microF1, accuracy, macroAupr, microAupr := src.Report(testFold[i].Y, YhSet[c], rebaData, rankCut, false)
+					microF1, accuracy, macroAupr, microAupr := src.Report(tsYfold, YhSet[c], rebaData, rankCut, false)
 					trainF1.Set(c, 0, float64(kSet[m]))
 					trainF1.Set(c, 1, sigmaFctsSet[n])
 					trainF1.Set(c, 2, trainF1.At(c, 2)+1.0)
@@ -298,6 +324,7 @@ Sample usages:
 				}
 			}
 		}
+		fmt.Println("pass training")
 
 		//sort by microAupr
 		var sortMap []kv
@@ -313,7 +340,9 @@ Sample usages:
 		cBest := sortMap[0].Key
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
-		YhSet := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		trYdata = src.PosSelect(trYdata, colSum)
+		tsYdata = src.PosSelect(tsYdata, colSum)
 		rebaData := src.RebalanceData(trYdata)
 		//corresponding testing measures
 		c := 0
@@ -360,6 +389,7 @@ Sample usages:
 		src.WriteFile(oFile, YhSet[0])
 		oFile = "./" + resFolder + "/rebalance.scale.txt"
 		src.WriteFile(oFile, rebaData)
+
 		os.Exit(0)
 
 	},

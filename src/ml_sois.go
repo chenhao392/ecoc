@@ -1,7 +1,7 @@
 package src
 
 import (
-	//"fmt"
+	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math/rand"
 	"sort"
@@ -27,6 +27,7 @@ func SOIS(trY *mat64.Dense, nFold int) (folds map[int][]int) {
 	allCombine := make(map[string]float64)
 	perRowCombine := make(map[int][][]int)
 	sampleWithCombineMap := make(map[string]combineList)
+	allNegRow := make([]int, 0)
 	//init folds
 	folds = make(map[int][]int)
 	for i := 0; i < nFold; i++ {
@@ -36,6 +37,10 @@ func SOIS(trY *mat64.Dense, nFold int) (folds map[int][]int) {
 	for rowIdx := 0; rowIdx < nRow; rowIdx++ {
 		key, sum, combines := genCombines(trY.RawRowView(rowIdx))
 		rowUsed[rowIdx] = false
+		if sum == 0 {
+			allNegRow = append(allNegRow, rowIdx)
+			continue
+		}
 		perRowCombine[rowIdx] = combines
 		//all combines
 		for i := 0; i < len(combines); i++ {
@@ -88,6 +93,7 @@ func SOIS(trY *mat64.Dense, nFold int) (folds map[int][]int) {
 		}
 		perFold[i] = float64(nRow) / float64(nFold)
 	}
+
 	//folds
 	key := mostDemandCombine(sampleWithCombineMap)
 	for key != "" {
@@ -141,6 +147,20 @@ func SOIS(trY *mat64.Dense, nFold int) (folds map[int][]int) {
 		}
 		key = mostDemandCombine(sampleWithCombineMap)
 	}
+	//all negative Rows
+	nNeg := make([]int, nFold)
+	for j := 0; j < len(allNegRow); j++ {
+		iFold := j % nFold
+		nNeg[iFold] += 1
+		//fmt.Println(iFold)
+		folds[iFold] = append(folds[iFold], allNegRow[j])
+		perFold[iFold] -= 1.0
+	}
+	for j := 0; j < nFold; j++ {
+		fmt.Printf("\t%d", nNeg[j])
+	}
+	fmt.Printf("\n")
+
 	return folds
 }
 func remove(slice []int, i int) []int {
