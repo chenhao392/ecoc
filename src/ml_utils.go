@@ -331,7 +331,7 @@ func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64) 
 	}
 	return F1
 }
-func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
+func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore float64, optThres float64) {
 	type kv struct {
 		Key   int
 		Value float64
@@ -361,6 +361,8 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 	all := 0.0
 	p := 0.0
 	tp := 0.0
+	maxFscore = 0.0
+	optThres = 0.0
 	total := float64(len(mapY))
 	prData := make([]float64, 0)
 	for _, kv := range sortYh {
@@ -376,20 +378,29 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64) {
 			tp += 1.0
 			pr := tp / p
 			re := tp / total
+			//update Fscore and thres
+			//fscore := 2 * pr * re / (pr + re)
+			fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
+			if fscore > maxFscore {
+				maxFscore = fscore
+				optThres = kv.Value
+			}
 			prData = append(prData, pr)
 			prData = append(prData, re)
 		}
 	}
-
 	aupr = 0.0
 	for i := 2; i < len(prData)-1; i += 2 {
 		//fmt.Println("AUPR:", aupr, prData[i-2], prData[i], prData[i+1], prData[i-1])
 		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
 	}
 	aupr = aupr / 2
-	//fmt.Println("AUPR: ", aupr)
-	return aupr
+	if maxFscore < float64(len(mapY))/float64(n)+0.05 {
+		return aupr, maxFscore, 10
+	}
+	return aupr, maxFscore, optThres
 }
+
 func computeAuprSkipTr(Y *mat64.Vector, Yh *mat64.Vector, Ys *mat64.Vector) (aupr float64) {
 	type kv struct {
 		Key   int
@@ -478,7 +489,7 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
 			if math.IsNaN(ele) {
 				sortYh = append(sortYh, kv{c, 0.0})
 			} else {
-				sortYh = append(sortYh, kv{c, Yh.At(r, c)})
+				sortYh = append(sortYh, kv{c, ele})
 			}
 			//Ys
 			//if Ys.At(r, c) == 1.0 {
@@ -489,6 +500,7 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
 		sort.Slice(sortYh, func(i, j int) bool {
 			return sortYh[i].Value > sortYh[j].Value
 		})
+		//so that it is rankCut +1 as golang is 0 based
 		thres := sortYh[rankCut].Value
 		//nEle := 0
 		//thres := 0.0
@@ -607,13 +619,13 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	sumFn := 0
 	sumTn := 0
 	for i := 0; i < nLabel; i++ {
-		aupr := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		aupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
 		sumAupr += aupr
 	}
 	//y-flat and microAupr
 	tsYdataVec := Flat(tsYdata)
 	tsYhatVec := Flat(tsYhat)
-	microAupr = ComputeAupr(tsYdataVec, tsYhatVec)
+	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 
 	//bin with rankCut
 	tsYhat = BinPredByAlpha(tsYhat, rankCut)
@@ -634,7 +646,8 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	return microF1, accuracy, macroAupr, microAupr
 }
 
-func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
+//func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
+func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
 	//F1 score
 	_, nLabel := tsYdata.Caps()
 	sumAupr := 0.0
@@ -650,10 +663,11 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, ra
 	macroAuprSet := make([]float64, 0)
 	microF1Set := make([]float64, 0)
 	//tsYhat = Zscore(tsYhat)
-	tsYhat = ColScale(tsYhat, rebaData)
+	//tsYhat = ColScale(tsYhat, rebaData)
+	tsYhat = RescaleData(tsYhat, thresData)
 	//macroAupr
 	for i := 0; i < nLabel; i++ {
-		aupr := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		aupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
 		macroAuprSet = append(macroAuprSet, aupr)
 		sumAupr += aupr
 	}
@@ -661,10 +675,11 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, ra
 	//y-flat and microAupr
 	tsYdataVec := Flat(tsYdata)
 	tsYhatVec := Flat(tsYhat)
-	microAupr = ComputeAupr(tsYdataVec, tsYhatVec)
+	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 	//microF1
 	tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
 	for i := 0; i < nLabel; i++ {
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 1.00)
 		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 0.99)
 		if isVerbose {
 			tpSet = append(tpSet, tp)
@@ -691,7 +706,18 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, ra
 			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i])
 		}
 	}
-	return microF1, accuracy, macroAupr, microAupr
+	return accuracy, microF1, microAupr, macroAupr
+}
+
+func RescaleData(data *mat64.Dense, thresData *mat64.Dense) (scaleData *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	scaleData = mat64.NewDense(nRow, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		for i := 0; i < nRow; i++ {
+			scaleData.Set(i, j, data.At(i, j)/thresData.At(0, j))
+		}
+	}
+	return scaleData
 }
 
 func RebalanceData(trYdata *mat64.Dense) (rebaData *mat64.Dense) {
@@ -719,8 +745,19 @@ func Zscore(data *mat64.Dense) (scaleData *mat64.Dense) {
 		}
 		mean, sd := stat.MeanStdDev(colData, nil)
 		for i := 0; i < nRow; i++ {
-			scaleData.Set(i, j, stat.StdScore(data.At(i, j), mean, sd)/4)
+			scaleData.Set(i, j, stat.StdScore(data.At(i, j), mean, sd)/5+0.5)
 		}
 	}
 	return scaleData
+}
+
+func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (thres *mat64.Dense) {
+	_, nCol := tsYdata.Caps()
+	thres = mat64.NewDense(1, nCol, nil)
+	//tsYhat2 := Zscore(tsYhat)
+	for i := 0; i < nCol; i++ {
+		_, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		thres.Set(0, i, optThres)
+	}
+	return thres
 }

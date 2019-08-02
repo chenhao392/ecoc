@@ -72,10 +72,10 @@ var diagCmd = &cobra.Command{
 		trXdata, _, _, _ := src.ReadFile(trX, false, false)
 
 		//run
-		YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		YhSet, thresSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
 		trYdata = src.PosSelect(trYdata, colSum)
 		tsYdata = src.PosSelect(tsYdata, colSum)
-		rebaData := src.RebalanceData(trYdata)
+		//rebaData := src.RebalanceData(trYdata)
 		//measures
 		testF1 := mat64.NewDense(1, 4, nil)
 		testAccuracy := mat64.NewDense(1, 4, nil)
@@ -92,7 +92,8 @@ var diagCmd = &cobra.Command{
 		c := 0
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
-			microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
+			//microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
+			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thresSet[c], rankCut, false)
 
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
@@ -124,8 +125,8 @@ var diagCmd = &cobra.Command{
 		src.WriteFile(oFile, testMicroAupr)
 		oFile = "./" + resFolder + ".test.probMatrix.txt"
 		src.WriteFile(oFile, YhSet[0])
-		oFile = "./" + resFolder + ".rebalance.scale.txt"
-		src.WriteFile(oFile, rebaData)
+		oFile = "./" + resFolder + ".thres.txt"
+		src.WriteFile(oFile, thresSet[0])
 		os.Exit(0)
 	},
 }

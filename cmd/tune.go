@@ -294,16 +294,15 @@ Sample usages:
 
 		fmt.Println("pass ecoc")
 		for i := 0; i < nFold; i++ {
-			YhSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
-			trYfold := src.PosSelect(trainFold[i].Y, colSum)
+			YhSet, thresSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
+			//trYfold := src.PosSelect(trainFold[i].Y, colSum)
 			tsYfold := src.PosSelect(testFold[i].Y, colSum)
-			rebaData := src.RebalanceData(trYfold)
 
 			//update all meassures
 			c := 0
 			for m := 0; m < nK; m++ {
 				for n := 0; n < len(sigmaFctsSet); n++ {
-					microF1, accuracy, macroAupr, microAupr := src.Report(tsYfold, YhSet[c], rebaData, rankCut, false)
+					accuracy, microF1, microAupr, macroAupr := src.Report(tsYfold, YhSet[c], thresSet[c], rankCut, false)
 					trainF1.Set(c, 0, float64(kSet[m]))
 					trainF1.Set(c, 1, sigmaFctsSet[n])
 					trainF1.Set(c, 2, trainF1.At(c, 2)+1.0)
@@ -340,15 +339,14 @@ Sample usages:
 		cBest := sortMap[0].Key
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
-		YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		YhSet, thresSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
 		trYdata = src.PosSelect(trYdata, colSum)
 		tsYdata = src.PosSelect(tsYdata, colSum)
-		rebaData := src.RebalanceData(trYdata)
 		//corresponding testing measures
 		c := 0
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
-			microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
+			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thresSet[c], rankCut, false)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
 			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -387,8 +385,8 @@ Sample usages:
 		src.WriteFile(oFile, testMicroAupr)
 		oFile = "./" + resFolder + "/test.probMatrix.txt"
 		src.WriteFile(oFile, YhSet[0])
-		oFile = "./" + resFolder + "/rebalance.scale.txt"
-		src.WriteFile(oFile, rebaData)
+		oFile = "./" + resFolder + "/thres.txt"
+		src.WriteFile(oFile, thresSet[0])
 
 		os.Exit(0)
 

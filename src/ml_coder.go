@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, tsYdata *mat64.Dense, rankCut int, minDims int, YhSet map[int]*mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, sigmaFcts float64, nLabel int, tsYdata *mat64.Dense, rankCut int, minDims int, YhSet map[int]*mat64.Dense, thresSet map[int]*mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	if k >= minDims {
 		return
@@ -30,15 +30,17 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 		arr := IOC_MFADecoding(nTs, i, tsY_Prob, tsY_C, sigma, Bsub, k, sigmaFcts, nLabel)
 		tsYhat.SetRow(i, arr)
 	}
+	tsYhat = Zscore(tsYhat)
+	thres := FscoreThres(tsYdata, tsYhat)
 	mutex.Lock()
 	YhSet[c] = tsYhat
+	thresSet[c] = thres
 	mutex.Unlock()
 }
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
 	mutex.Lock()
-	fmt.Println("CG label ", i)
 	sigma.Set(0, i, math.Sqrt(optMSE))
 	//bias term for tsXdata added before
 	element := mat64.NewDense(0, 0, nil)
@@ -49,8 +51,9 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[
 	mutex.Unlock()
 }
 
-func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, sigmaFctsSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
+func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, sigmaFctsSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, thresSet map[int]*mat64.Dense, colSum *mat64.Vector) {
 	YhSet = make(map[int]*mat64.Dense)
+	thresSet = make(map[int]*mat64.Dense)
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
 	//SOIS stratification
@@ -64,7 +67,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
 		fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
-		return nil, nil
+		return nil, nil, nil
 	}
 	//tsY_prob
 	tsY_Prob := mat64.NewDense(nRowTsY, nLabel, nil)
@@ -127,20 +130,20 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//for workers
 	randValues := RandListFromUniDist(nTr)
 	idxPerm := rand.Perm(nTr)
-	//wg.Add(nLabel)
+	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
-		//go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
-		beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
-		fmt.Println("CG label ", i)
-		sigma.Set(0, i, math.Sqrt(optMSE))
+		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
+		//beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
+		//fmt.Println("CG label ", i)
+		//sigma.Set(0, i, math.Sqrt(optMSE))
 		//bias term for tsXdata added before
-		element := mat64.NewDense(0, 0, nil)
-		element.Mul(tsXdataB, beta)
-		for j := 0; j < nTs; j++ {
-			tsY_C.Set(j, i, element.At(j, 0))
-		}
+		//element := mat64.NewDense(0, 0, nil)
+		//element.Mul(tsXdataB, beta)
+		//for j := 0; j < nTs; j++ {
+		//	tsY_C.Set(j, i, element.At(j, 0))
+		//}
 	}
-	//wg.Wait()
+	wg.Wait()
 	fmt.Println("pass step 3 cg decoding\n")
 	//decoding and step 4
 	c := 0
@@ -148,13 +151,13 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	for k := 0; k < nK; k++ {
 		Bsub := mat64.DenseCopyOf(B.Slice(0, nLabel, 0, kSet[k]))
 		for s := 0; s < len(sigmaFctsSet); s++ {
-			go single_IOC_MFADecoding_and_result(nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, tsYdata, rankCut, minDims, YhSet, wg, mutex)
+			go single_IOC_MFADecoding_and_result(nTs, kSet[k], c, tsY_Prob, tsY_C, sigma, Bsub, sigmaFctsSet[s], nLabel, tsYdata, rankCut, minDims, YhSet, thresSet, wg, mutex)
 			c += 1
 		}
 	}
 	wg.Wait()
 	runtime.GC()
-	return YhSet, colSum
+	return YhSet, thresSet, colSum
 }
 func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64, label int) {
 	//lamda := []float64{0.1, 1, 10}

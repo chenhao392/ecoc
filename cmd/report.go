@@ -40,8 +40,8 @@ var reportCmd = &cobra.Command{
 		tsYdata, _, _, _ := src.ReadFile(tsY, true, true)
 		tsYhat, _, _, _ := src.ReadFile(tsYh, false, false)
 		rebaData, _, _, _ := src.ReadFile(rebaFile, false, false)
-		microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, tsYhat, rebaData, rankCut, true)
-		fmt.Println(microF1, accuracy, macroAupr, microAupr)
+		accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, tsYhat, rebaData, rankCut, true)
+		fmt.Println(accuracy, microF1, microAupr, macroAupr)
 
 	},
 }
