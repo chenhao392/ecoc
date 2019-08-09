@@ -664,7 +664,7 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	microF1Set := make([]float64, 0)
 	//tsYhat = Zscore(tsYhat)
 	//tsYhat = ColScale(tsYhat, rebaData)
-	tsYhat = RescaleData(tsYhat, thresData)
+	//tsYhat = RescaleData(tsYhat, thresData)
 	//macroAupr
 	for i := 0; i < nLabel; i++ {
 		aupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
@@ -677,10 +677,10 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	tsYhatVec := Flat(tsYhat)
 	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 	//microF1
-	tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
+	//tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
 	for i := 0; i < nLabel; i++ {
 		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 1.00)
-		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 1.00)
+		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
 		if isVerbose {
 			tpSet = append(tpSet, tp)
 			fpSet = append(fpSet, fp)
@@ -714,11 +714,12 @@ func RescaleData(data *mat64.Dense, thresData *mat64.Dense) (scaleData *mat64.De
 	scaleData = mat64.NewDense(nRow, nCol, nil)
 	for j := 0; j < nCol; j++ {
 		for i := 0; i < nRow; i++ {
-			if data.At(i, j) >= thresData.At(0, j) {
-				scaleData.Set(i, j, data.At(i, j)/thresData.At(0, j))
-			} else {
-				scaleData.Set(i, j, 0)
-			}
+			//if data.At(i, j) >= thresData.At(0, j) {
+			scaleData.Set(i, j, data.At(i, j)/thresData.At(0, j))
+			//}
+			//} else {
+			//	scaleData.Set(i, j, 0)
+			//}
 		}
 	}
 	return scaleData
