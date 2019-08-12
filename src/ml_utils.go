@@ -677,10 +677,10 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	tsYhatVec := Flat(tsYhat)
 	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 	//microF1
-	//tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
+	tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
 	for i := 0; i < nLabel; i++ {
-		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 1.00)
-		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
+		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), 0.5)
 		if isVerbose {
 			tpSet = append(tpSet, tp)
 			fpSet = append(fpSet, fp)
@@ -765,4 +765,65 @@ func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (thres *mat64.Dense)
 		thres.Set(0, i, optThres)
 	}
 	return thres
+}
+
+func AccumThres(c int, colSum *mat64.Vector, thresSet *mat64.Dense, thres *mat64.Dense) {
+	tC := 0
+	_, nCol := thres.Caps()
+	for j := 0; j < nCol; j++ {
+		if colSum.At(j, 0) == 1.0 {
+			thresSet.Set(c, j, thres.At(0, tC)+thresSet.At(c, j))
+			tC += 1
+		}
+	}
+}
+
+func AveThres(cBest int, thresSet *mat64.Dense, plattCountSet *mat64.Dense) (aveThres *mat64.Dense) {
+	_, nCol := thresSet.Caps()
+	aveThres = mat64.NewDense(1, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		if plattCountSet.At(cBest, j) > 0 {
+		} else {
+			plattCountSet.Set(cBest, j, 1.0)
+		}
+		aveThres.Set(0, j, thresSet.At(cBest, j)/plattCountSet.At(cBest, j))
+	}
+	return aveThres
+}
+
+func AccumTsYdata(c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY *mat64.Dense, YhPlattSet map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense) {
+	nCol := colSum.Len()
+	nRow, _ := tsYh.Caps()
+	tsYh2 := mat64.NewDense(nRow, nCol, nil)
+	tsY2 := mat64.NewDense(nRow, nCol, nil)
+
+	tC := 0
+	for j := 0; j < nCol; j++ {
+		if colSum.At(j, 0) == 1.0 {
+			for i := 0; i < nRow; i++ {
+				tsYh2.Set(i, j, tsYh.At(i, tC))
+				tsY2.Set(i, j, tsY.At(i, tC))
+			}
+			tC += 1
+		} else {
+			for i := 0; i < nRow; i++ {
+				tsYh2.Set(i, j, -1.0)
+				tsY2.Set(i, j, -1.0)
+			}
+		}
+	}
+	//whether the matrix is defined previously
+	Yh, isYh := YhPlattSet[c]
+	Y, _ := yPlattSet[c]
+	if !isYh {
+		YhPlattSet[c] = tsYh2
+		yPlattSet[c] = tsY2
+	} else {
+		newYh := mat64.NewDense(0, 0, nil)
+		newY := mat64.NewDense(0, 0, nil)
+		newYh.Stack(Yh, tsYh2)
+		newY.Stack(Y, tsY2)
+		YhPlattSet[c] = newYh
+		yPlattSet[c] = newY
+	}
 }

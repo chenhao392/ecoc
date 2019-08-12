@@ -1,21 +1,77 @@
 package src
 
 import (
-	"fmt"
+	//"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
 )
 
-func Platt(trYhat *mat64.Dense, trY *mat64.Dense, tsYhat *mat64.Dense) (tsYhh *mat64.Dense) {
+func SelectPlattAB(cBest int, plattASet *mat64.Dense, plattBSet *mat64.Dense, plattCountSet *mat64.Dense) (plattAB *mat64.Dense) {
+	_, nCol := plattASet.Caps()
+	plattAB = mat64.NewDense(2, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		if plattCountSet.At(cBest, j) > 0 {
+		} else {
+			plattCountSet.Set(cBest, j, 1.0)
+		}
+
+		plattAB.Set(0, j, plattASet.At(cBest, j)/plattCountSet.At(cBest, j))
+		plattAB.Set(1, j, plattBSet.At(cBest, j)/plattCountSet.At(cBest, j))
+	}
+	return plattAB
+}
+func AccumPlatt(c int, colSum *mat64.Vector, plattAB *mat64.Dense, plattASet *mat64.Dense, plattBSet *mat64.Dense, plattCountSet *mat64.Dense) {
+	tC := 0
+	_, nCol := plattASet.Caps()
+	for j := 0; j < nCol; j++ {
+		if colSum.At(j, 0) == 1.0 {
+			plattASet.Set(c, j, plattAB.At(0, tC)+plattASet.At(c, j))
+			plattBSet.Set(c, j, plattAB.At(1, tC)+plattBSet.At(c, j))
+			plattCountSet.Set(c, j, plattCountSet.At(c, j)+1.0)
+			tC += 1
+		}
+	}
+}
+func Platt(trYhat *mat64.Dense, trY *mat64.Dense, tsYhat *mat64.Dense) (tsYhh *mat64.Dense, plattAB *mat64.Dense) {
 	nRow, nCol := tsYhat.Caps()
 	tsYhh = mat64.NewDense(nRow, nCol, nil)
+	plattAB = mat64.NewDense(2, nCol, nil)
 	for i := 0; i < nCol; i++ {
-		A, B := PlattParameterEst(trYhat.ColView(i), trY.ColView(i))
-		fmt.Println(i, A, B)
+		trYhatCol, trYcol := minusValueFilterForPlatt(trYhat.ColView(i), trY.ColView(i))
+		A, B := PlattParameterEst(trYhatCol, trYcol)
+		//fmt.Println(i, A, B)
+		plattAB.Set(0, i, A)
+		plattAB.Set(1, i, B)
 		yhh := PlattScale(tsYhat.ColView(i), A, B)
 		tsYhh.SetCol(i, yhh)
 	}
-	return tsYhh
+	return tsYhh, plattAB
+}
+
+func minusValueFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYhat *mat64.Vector, trY *mat64.Vector) {
+	tmpTrYhat := make([]float64, 0)
+	tmpTrY := make([]float64, 0)
+	for i := 0; i < inTrYhat.Len(); i++ {
+		if inTrYhat.At(i, 0) == -1.0 && inTrY.At(i, 0) == -1.0 {
+			//do nothing
+		} else {
+			tmpTrYhat = append(tmpTrYhat, inTrYhat.At(i, 0))
+			tmpTrY = append(tmpTrY, inTrY.At(i, 0))
+		}
+	}
+	trYhat = mat64.NewVector(len(tmpTrYhat), tmpTrYhat)
+	trY = mat64.NewVector(len(tmpTrY), tmpTrY)
+	return trYhat, trY
+}
+
+func PlattScaleSet(Yh *mat64.Dense, plattAB *mat64.Dense) (Yhh *mat64.Dense) {
+	nRow, nCol := Yh.Caps()
+	Yhh = mat64.NewDense(nRow, nCol, nil)
+	for i := 0; i < nCol; i++ {
+		yhh := PlattScale(Yh.ColView(i), plattAB.At(0, i), plattAB.At(1, i))
+		Yhh.SetCol(i, yhh)
+	}
+	return Yhh
 }
 
 func PlattScale(Yh *mat64.Vector, A float64, B float64) (Yhh []float64) {

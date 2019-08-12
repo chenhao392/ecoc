@@ -291,10 +291,17 @@ Sample usages:
 			fmt.Println(err)
 			return
 		}
+		//map
+		//plattAset := mat64.NewDense(nL, nLabel, nil)
+		//plattBset := mat64.NewDense(nL, nLabel, nil)
+		//plattCountSet := mat64.NewDense(nL, nLabel, nil)
+		YhPlattSet := make(map[int]*mat64.Dense)
+		yPlattSet := make(map[int]*mat64.Dense)
+		//thresSet := mat64.NewDense(nL, nLabel, nil)
 
 		fmt.Println("pass ecoc")
 		for i := 0; i < nFold; i++ {
-			YhSet, thresSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
+			YhSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
 			//trYfold := src.PosSelect(trainFold[i].Y, colSum)
 			tsYfold := src.PosSelect(testFold[i].Y, colSum)
 
@@ -302,7 +309,12 @@ Sample usages:
 			c := 0
 			for m := 0; m < nK; m++ {
 				for n := 0; n < len(sigmaFctsSet); n++ {
-					accuracy, microF1, microAupr, macroAupr := src.Report(tsYfold, YhSet[c], thresSet[c], rankCut, false)
+					tsYhat, _ := src.Platt(YhSet[c], tsYfold, YhSet[c])
+					thres := src.FscoreThres(tsYfold, tsYhat)
+					//src.AccumPlatt(c, colSum, plattAB, plattAset, plattBset, plattCountSet)
+					//src.AccumThres(c, colSum, thresSet, thres)
+					src.AccumTsYdata(c, colSum, YhSet[c], tsYfold, YhPlattSet, yPlattSet)
+					accuracy, microF1, microAupr, macroAupr := src.Report(tsYfold, tsYhat, thres, rankCut, false)
 					trainF1.Set(c, 0, float64(kSet[m]))
 					trainF1.Set(c, 1, sigmaFctsSet[n])
 					trainF1.Set(c, 2, trainF1.At(c, 2)+1.0)
@@ -337,16 +349,22 @@ Sample usages:
 
 		//best training aupr
 		cBest := sortMap[0].Key
+		//Platt
+		//plattAB := src.SelectPlattAB(cBest, plattAset, plattBset, plattCountSet)
+		YhPlattScale, plattAB := src.Platt(YhPlattSet[cBest], yPlattSet[cBest], YhPlattSet[cBest])
+		thres := src.FscoreThres(yPlattSet[cBest], YhPlattScale)
+		//k and sigma
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
-		YhSet, thresSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
-		trYdata = src.PosSelect(trYdata, colSum)
-		tsYdata = src.PosSelect(tsYdata, colSum)
+		YhSet, _ := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		//trYdata = src.PosSelect(trYdata, colSum)
+		tsYhat := src.PlattScaleSet(YhSet[0], plattAB)
+
 		//corresponding testing measures
 		c := 0
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
-			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thresSet[c], rankCut, false)
+			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, tsYhat, thres, rankCut, false)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
 			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -384,9 +402,9 @@ Sample usages:
 		oFile = "./" + resFolder + "/cvTesting.microAupr.txt"
 		src.WriteFile(oFile, testMicroAupr)
 		oFile = "./" + resFolder + "/test.probMatrix.txt"
-		src.WriteFile(oFile, YhSet[0])
+		src.WriteFile(oFile, tsYhat)
 		oFile = "./" + resFolder + "/thres.txt"
-		src.WriteFile(oFile, thresSet[0])
+		src.WriteFile(oFile, thres)
 
 		os.Exit(0)
 

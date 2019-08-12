@@ -72,7 +72,8 @@ var diagCmd = &cobra.Command{
 		trXdata, _, _, _ := src.ReadFile(trX, false, false)
 
 		//run
-		YhSet, thresSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		thres := src.FscoreThres(tsYdata, YhSet[0])
 		trYdata = src.PosSelect(trYdata, colSum)
 		tsYdata = src.PosSelect(tsYdata, colSum)
 		//rebaData := src.RebalanceData(trYdata)
@@ -93,7 +94,7 @@ var diagCmd = &cobra.Command{
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
 			//microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
-			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thresSet[c], rankCut, false)
+			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thres, rankCut, false)
 
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
@@ -126,7 +127,7 @@ var diagCmd = &cobra.Command{
 		oFile = "./" + resFolder + ".test.probMatrix.txt"
 		src.WriteFile(oFile, YhSet[0])
 		oFile = "./" + resFolder + ".thres.txt"
-		src.WriteFile(oFile, thresSet[0])
+		src.WriteFile(oFile, thres)
 		os.Exit(0)
 	},
 }
