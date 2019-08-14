@@ -445,31 +445,14 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense, trY *m
 	return prior
 }
 
-func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []string, idIdx map[string]int, tsXdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, ind []int) (tsXdata1 *mat64.Dense, trXdata1 *mat64.Dense) {
+func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []string, idIdx map[string]int, tsXdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, ind []int, isStackingTr bool) (tsXdata1 *mat64.Dense, trXdata1 *mat64.Dense) {
 	_, nLabel := sPriorData.Caps()
 	//nTrLabel might be more than nLabel as it can be filterred
 	_, nTrLabel := trYdata.Caps()
+	//tsX
+	cLabel := 0
 	tmpTsXdata := mat64.NewDense(len(tsRowName), nLabel, nil)
 	tmpTrXdata := mat64.NewDense(len(trRowName), nLabel, nil)
-	cLabel := 0
-	//trX
-	for l := 0; l < nTrLabel; l++ {
-		if ind[l] > 1 {
-			for k := 0; k < len(trRowName); k++ {
-				_, exist := idIdx[trRowName[k]]
-				if exist {
-					if trYdata.At(k, l) == 1.0 {
-						tmpTrXdata.Set(k, cLabel, 1/float64(ind[l]))
-					} else {
-						tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
-					}
-				}
-			}
-			cLabel += 1
-		}
-	}
-	//tsX
-	cLabel = 0
 	for l := 0; l < nTrLabel; l++ {
 		if ind[l] > 1 {
 			for k := 0; k < len(tsRowName); k++ {
@@ -482,13 +465,38 @@ func FeatureDataStack(sPriorData *mat64.Dense, tsRowName []string, trRowName []s
 
 		}
 	}
+
+	//trX
+	if isStackingTr {
+		cLabel = 0
+		for l := 0; l < nTrLabel; l++ {
+			if ind[l] > 1 {
+				for k := 0; k < len(trRowName); k++ {
+					_, exist := idIdx[trRowName[k]]
+					if exist {
+						if trYdata.At(k, l) == 1.0 {
+							tmpTrXdata.Set(k, cLabel, 1/float64(ind[l]))
+						} else {
+							tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
+						}
+					}
+				}
+				cLabel += 1
+			}
+		}
+	}
+
 	nRow, _ := tsXdata.Caps()
 	if nRow == 0 {
 		tsXdata = tmpTsXdata
-		trXdata = tmpTrXdata
+		if isStackingTr {
+			trXdata = tmpTrXdata
+		}
 	} else {
 		tsXdata = ColStackMatrix(tsXdata, tmpTsXdata)
-		trXdata = ColStackMatrix(trXdata, tmpTrXdata)
+		if isStackingTr {
+			trXdata = ColStackMatrix(trXdata, tmpTrXdata)
+		}
 	}
 	return tsXdata, trXdata
 }

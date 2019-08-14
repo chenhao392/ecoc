@@ -94,13 +94,68 @@ Sample usages:
 		tsYdata, tsRowName, _, _ := src.ReadFile(tsY, true, true)
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
 		tsXdata := mat64.NewDense(0, 0, nil)
-		trXdata := mat64.NewDense(0, 0, nil)
-		// for filtering prior genes, only those in training set are used for propagation
-		trGeneMap := make(map[string]int)
-		for i := 0; i < len(trRowName); i++ {
-			trGeneMap[trRowName[i]] = i
+		//trXdata := mat64.NewDense(0, 0, nil)
+		vlXdata := mat64.NewDense(0, 0, nil)
+		nTr, nLabel := trYdata.Caps()
+		//split training data for nested cv
+		folds := src.SOIS(trYdata, nFold)
+		//for i := 0; i < 5; i++ {
+		//	nPos := make([]int, nLabel)
+		//	for j := 0; j < nLabel; j++ {
+		//		for k := 0; k < len(folds[i]); k++ {
+		//			if trYdata.At(folds[i][k], j) == 1 {
+		//				nPos[j] += 1
+		//			}
+		//		}
+		//	}
+		//	for j := 0; j < nLabel; j++ {
+		//		fmt.Printf("\t%d", nPos[j])
+		//	}
+		//	fmt.Printf("\n")
+		//}
+		trainFold := make([]src.CvFold, nFold-1)
+		testFold := make([]src.CvFold, nFold-1)
+		//validFold := make([]src.CvFold, 1)
+
+		cvValid := make([]int, 0)
+		cvValidMap := map[int]int{}
+		//validation set for Platt scaling
+		for j := 0; j < len(folds[0]); j++ {
+			cvValid = append(cvValid, folds[0][j])
+			cvValidMap[folds[0][j]] = folds[0][j]
 		}
-		//network
+		cvTotalTrain := make([]int, 0)
+		//the rest is for total training
+		for j := 0; j < nTr; j++ {
+			_, exist := cvValidMap[j]
+			if !exist {
+				cvTotalTrain = append(cvTotalTrain, j)
+			}
+		}
+		// for filtering prior genes, only those in total training set are used for propagation
+		trGeneMapTotalTrain := make(map[string]int)
+		for i := 0; i < len(cvTotalTrain); i++ {
+			trGeneMapTotalTrain[trRowName[cvTotalTrain[i]]] = cvTotalTrain[i]
+		}
+
+		//trX and trY for total training data
+		trXdataTotalTrain := mat64.NewDense(0, 0, nil)
+		_, nColY := trYdata.Caps()
+		trYdataTotalTrain := mat64.NewDense(len(cvTotalTrain), nColY, nil)
+		//row name and label data for total training gene set
+		trRowNameTotalTrain := make([]string, 0)
+		for s := 0; s < len(cvTotalTrain); s++ {
+			trYdataTotalTrain.SetRow(s, trYdata.RawRowView(cvTotalTrain[s]))
+			trRowNameTotalTrain = append(trRowNameTotalTrain, trRowName[cvTotalTrain[s]])
+		}
+		//row names and label data for validation set
+		vlRowName := make([]string, 0)
+		vlYdata := mat64.NewDense(len(cvValid), nColY, nil)
+		for s := 0; s < len(cvValid); s++ {
+			vlYdata.SetRow(s, trYdata.RawRowView(cvValid[s]))
+			vlRowName = append(vlRowName, trRowName[cvValid[s]])
+		}
+		//network loading and label propagation
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		for i := 0; i < len(inNetworkFile); i++ {
@@ -109,19 +164,20 @@ Sample usages:
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 			if !isAddPrior {
-				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
-				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+				sPriorData, ind := src.PropagateSet(network, trYdataTotalTrain, idIdx, trRowNameTotalTrain, trGeneMapTotalTrain, isDada, alpha, &wg, &mutex)
+				tsXdata, trXdataTotalTrain = src.FeatureDataStack(sPriorData, tsRowName, trRowNameTotalTrain, idIdx, tsXdata, trXdataTotalTrain, trYdataTotalTrain, ind, true)
+				vlXdata, _ = src.FeatureDataStack(sPriorData, vlRowName, trRowNameTotalTrain, idIdx, vlXdata, trXdataTotalTrain, trYdataTotalTrain, ind, false)
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
-					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
-					tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdataTotalTrain, idIdx, idxToId, trRowNameTotalTrain, trGeneMapTotalTrain, isDada, alpha, &wg, &mutex)
+					tsXdata, trXdataTotalTrain = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdataTotalTrain, trYdataTotalTrain, ind, true)
+					vlXdata, _ = src.FeatureDataStack(sPriorData, vlRowName, trRowName, idIdx, vlXdata, trXdataTotalTrain, trYdataTotalTrain, ind, false)
 				}
 			}
 		}
 
-		_, nFea := trXdata.Caps()
-		nTr, nLabel := trYdata.Caps()
+		_, nFea := trXdataTotalTrain.Caps()
 		fmt.Println(nFea)
 		if nFea < nLabel {
 			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
@@ -137,28 +193,7 @@ Sample usages:
 			}
 		}
 
-		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold)
-		for i := 0; i < 5; i++ {
-			nPos := make([]int, nLabel)
-			for j := 0; j < nLabel; j++ {
-				for k := 0; k < len(folds[i]); k++ {
-					if trYdata.At(folds[i][k], j) == 1 {
-						nPos[j] += 1
-					}
-				}
-			}
-			for j := 0; j < nLabel; j++ {
-				fmt.Printf("\t%d", nPos[j])
-			}
-			fmt.Printf("\n")
-		}
-		//os.Exit(0)
-		//idxPerm := rand.Perm(nTr)
-		trainFold := make([]src.CvFold, nFold)
-		testFold := make([]src.CvFold, nFold)
-
-		for f := 0; f < nFold; f++ {
+		for f := 1; f < nFold; f++ {
 			cvTrain := make([]int, 0)
 			cvTest := make([]int, 0)
 			cvTestMap := map[int]int{}
@@ -169,10 +204,12 @@ Sample usages:
 			//the rest is for training
 			for j := 0; j < nTr; j++ {
 				_, exist := cvTestMap[j]
-				if !exist {
+				_, exist2 := cvValidMap[j]
+				if !exist && !exist2 {
 					cvTrain = append(cvTrain, j)
 				}
 			}
+			//fmt.Println("cvTrain largest:", cvTrain[len(cvTrain)-1])
 			//generating ECOC
 			//trXdataCV should use genes in trYdata for training only
 			trGeneMapCV := make(map[string]int)
@@ -258,8 +295,8 @@ Sample usages:
 				}
 			}
 
-			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata)
-			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata)
+			trainFold[f-1].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata)
+			testFold[f-1].SetXYinNestedTraining(cvTest, trXdataCV, trYdata)
 		}
 
 		fmt.Println("pass ecoc matrix")
@@ -295,12 +332,12 @@ Sample usages:
 		//plattAset := mat64.NewDense(nL, nLabel, nil)
 		//plattBset := mat64.NewDense(nL, nLabel, nil)
 		//plattCountSet := mat64.NewDense(nL, nLabel, nil)
-		YhPlattSet := make(map[int]*mat64.Dense)
-		yPlattSet := make(map[int]*mat64.Dense)
+		//YhPlattSet := make(map[int]*mat64.Dense)
+		//yPlattSet := make(map[int]*mat64.Dense)
 		//thresSet := mat64.NewDense(nL, nLabel, nil)
 
 		fmt.Println("pass ecoc")
-		for i := 0; i < nFold; i++ {
+		for i := 0; i < nFold-1; i++ {
 			YhSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
 			//trYfold := src.PosSelect(trainFold[i].Y, colSum)
 			tsYfold := src.PosSelect(testFold[i].Y, colSum)
@@ -313,7 +350,7 @@ Sample usages:
 					thres := src.FscoreThres(tsYfold, tsYhat)
 					//src.AccumPlatt(c, colSum, plattAB, plattAset, plattBset, plattCountSet)
 					//src.AccumThres(c, colSum, thresSet, thres)
-					src.AccumTsYdata(c, colSum, YhSet[c], tsYfold, YhPlattSet, yPlattSet)
+					//src.AccumTsYdata(c, colSum, YhSet[c], tsYfold, YhPlattSet, yPlattSet)
 					accuracy, microF1, microAupr, macroAupr := src.Report(tsYfold, tsYhat, thres, rankCut, false)
 					trainF1.Set(c, 0, float64(kSet[m]))
 					trainF1.Set(c, 1, sigmaFctsSet[n])
@@ -351,13 +388,16 @@ Sample usages:
 		cBest := sortMap[0].Key
 		//Platt
 		//plattAB := src.SelectPlattAB(cBest, plattAset, plattBset, plattCountSet)
-		YhPlattScale, plattAB := src.Platt(YhPlattSet[cBest], yPlattSet[cBest], YhPlattSet[cBest])
-		thres := src.FscoreThres(yPlattSet[cBest], YhPlattScale)
+		//YhPlattScale, plattAB := src.Platt(YhPlattSet[cBest], yPlattSet[cBest], YhPlattSet[cBest])
+		//thres := src.FscoreThres(yPlattSet[cBest], YhPlattScale)
 		//k and sigma
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
-		YhSet, _ := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		vlYhSet, _ := src.EcocRun(vlXdata, vlYdata, trXdataTotalTrain, trYdataTotalTrain, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		YhSet, _ := src.EcocRun(tsXdata, tsYdata, trXdataTotalTrain, trYdataTotalTrain, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
 		//trYdata = src.PosSelect(trYdata, colSum)
+		vlYhh, plattAB := src.Platt(vlYhSet[0], vlYdata, vlYhSet[0])
+		thres := src.FscoreThres(vlYdata, vlYhh)
 		tsYhat := src.PlattScaleSet(YhSet[0], plattAB)
 
 		//corresponding testing measures

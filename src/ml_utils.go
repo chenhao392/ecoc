@@ -43,6 +43,7 @@ func (f *CvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Ve
 }
 func (f *CvFold) SetXYinNestedTraining(idxArr []int, matX *mat64.Dense, matY *mat64.Dense) {
 	_, nColX := matX.Caps()
+	//fmt.Println("dimX", nRowX, nColX)
 	_, nColY := matY.Caps()
 	nRow := len(idxArr)
 	f.X = mat64.NewDense(nRow, nColX, nil)
@@ -677,10 +678,10 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	tsYhatVec := Flat(tsYhat)
 	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 	//microF1
-	tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
+	//tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
 	for i := 0; i < nLabel; i++ {
-		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
-		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), 0.5)
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
+		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
 		if isVerbose {
 			tpSet = append(tpSet, tp)
 			fpSet = append(fpSet, fp)
