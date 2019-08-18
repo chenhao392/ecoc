@@ -194,6 +194,28 @@ func minIdx(inArray []float64) (idx int) {
 	return idx
 }
 
+func ProbScale(data *mat64.Dense) (scaleData *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	scaleData = mat64.NewDense(nRow, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		max := 0.0
+		min := 0.0
+		for i := 0; i < nRow; i++ {
+			ele := data.At(i, j)
+			if ele > max {
+				max = ele
+			}
+			if ele < min {
+				min = ele
+			}
+		}
+		scale := max - min
+		for i := 0; i < nRow; i++ {
+			scaleData.Set(i, j, (data.At(i, j)-min)/scale)
+		}
+	}
+	return scaleData
+}
 func ColScale(data *mat64.Dense, rebaData *mat64.Dense) (scaleData *mat64.Dense) {
 	nRow, nCol := data.Caps()
 	scaleData = mat64.NewDense(nRow, nCol, nil)
@@ -213,11 +235,9 @@ func ColScale(data *mat64.Dense, rebaData *mat64.Dense) (scaleData *mat64.Dense)
 				break
 			}
 		}
-	}
-	//incase maxValue as 0
-	for i := 0; i < len(scaleValue); i++ {
-		if scaleValue[i] == 0.0 {
-			scaleValue[i] = 1.0
+		//in case maxValue as 0
+		if scaleValue[j] == 0.0 {
+			scaleValue[j] = sortYh[0].Value
 		}
 	}
 	//fmt.Println(scaleValue)
@@ -226,10 +246,11 @@ func ColScale(data *mat64.Dense, rebaData *mat64.Dense) (scaleData *mat64.Dense)
 		for j := 0; j < nCol; j++ {
 			value := data.At(i, j) / scaleValue[j]
 			//value := data.At(i, j)
-			//if value > 1.0 {
-			//	scaleData.Set(i, j, 1.0)
+			if value > 1.0 {
+				scaleData.Set(i, j, 1.0)
+			}
 			//} else {
-			scaleData.Set(i, j, value)
+			//	scaleData.Set(i, j, value)
 			//}
 		}
 	}
@@ -379,8 +400,8 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 			pr := tp / p
 			re := tp / total
 			//update Fscore and thres
-			//fscore := 2 * pr * re / (pr + re)
-			fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
+			fscore := 2 * pr * re / (pr + re)
+			//fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
 			if fscore > maxFscore {
 				maxFscore = fscore
 				optThres = kv.Value
@@ -473,7 +494,7 @@ func Flat(Y *mat64.Dense) (vec *mat64.Vector) {
 	}
 	return vec
 }
-func BinPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
+func PredByAlpha(Yh *mat64.Dense, rankCut int, isBin bool) (binYh *mat64.Dense) {
 	type kv struct {
 		Key   int
 		Value float64
@@ -482,19 +503,13 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
 	binYh = mat64.NewDense(nRow, nCol, nil)
 	for r := 0; r < nRow; r++ {
 		var sortYh []kv
-		//skipY := make(map[int]int)
 		for c := 0; c < nCol; c++ {
-			//Yh
 			ele := Yh.At(r, c)
 			if math.IsNaN(ele) {
 				sortYh = append(sortYh, kv{c, 0.0})
 			} else {
 				sortYh = append(sortYh, kv{c, ele})
 			}
-			//Ys
-			//if Ys.At(r, c) == 1.0 {
-			//	skipY[c] = 1
-			//}
 
 		}
 		sort.Slice(sortYh, func(i, j int) bool {
@@ -502,24 +517,16 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int) (binYh *mat64.Dense) {
 		})
 		//so that it is rankCut +1 as golang is 0 based
 		thres := sortYh[rankCut].Value
-		//nEle := 0
-		//thres := 0.0
-		//for key, _ := range sortYh {
-		//	_, exist := skipY[key]
-		//	if !exist {
-		//		nEle += 1
-		//		if rankCut == nEle {
-		//			thres = sortYh[nEle].Value
-		//			break
-		//		}
-		//	}
-		//}
 		for c := 0; c < nCol; c++ {
 			ele := Yh.At(r, c)
 			if math.IsNaN(ele) {
 				binYh.Set(r, c, 0.0)
 			} else if Yh.At(r, c) > thres {
-				binYh.Set(r, c, 1.0)
+				if isBin {
+					binYh.Set(r, c, 1.0)
+				} else {
+					binYh.Set(r, c, ele)
+				}
 			} else {
 				binYh.Set(r, c, 0.0)
 			}
@@ -628,7 +635,7 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 
 	//bin with rankCut
-	tsYhat = BinPredByAlpha(tsYhat, rankCut)
+	tsYhat = PredByAlpha(tsYhat, rankCut, true)
 	for i := 0; i < nLabel; i++ {
 		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), 0.99)
 		sumF1 += f1
@@ -677,10 +684,12 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	tsYhatVec := Flat(tsYhat)
 	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
 	//microF1
-	tsYhatMicro := BinPredByAlpha(tsYhat, rankCut)
+	tsYhatMicro := PredByAlpha(tsYhat, rankCut, false)
 	for i := 0; i < nLabel; i++ {
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 1.0)
 		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
-		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), 0.5)
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), 0.99)
 		if isVerbose {
 			tpSet = append(tpSet, tp)
 			fpSet = append(fpSet, fp)
@@ -698,7 +707,7 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	r := float64(sumTp) / (float64(sumTp) + float64(sumFn))
 	microF1 = 2.0 * p * r / (p + r)
 	//accuracy
-	tsYhatAccuracy := BinPredByAlpha(tsYhat, 1)
+	tsYhatAccuracy := PredByAlpha(tsYhat, 1, true)
 	accuracy = ComputeAccuracy(tsYdata, tsYhatAccuracy)
 	if isVerbose {
 		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "label", "tp", "fp", "fn", "tn", "F1", "AUPR")
@@ -714,9 +723,9 @@ func RescaleData(data *mat64.Dense, thresData *mat64.Dense) (scaleData *mat64.De
 	scaleData = mat64.NewDense(nRow, nCol, nil)
 	for j := 0; j < nCol; j++ {
 		for i := 0; i < nRow; i++ {
-			//if data.At(i, j) >= thresData.At(0, j) {
-			scaleData.Set(i, j, data.At(i, j)/thresData.At(0, j))
-			//}
+			if data.At(i, j) >= thresData.At(0, j) {
+				scaleData.Set(i, j, data.At(i, j)/thresData.At(0, j))
+			}
 			//} else {
 			//	scaleData.Set(i, j, 0)
 			//}
@@ -761,7 +770,8 @@ func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (thres *mat64.Dense)
 	thres = mat64.NewDense(1, nCol, nil)
 	//tsYhat2 := Zscore(tsYhat)
 	for i := 0; i < nCol; i++ {
-		_, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		tsYdataCol, tsYhatCol := minusValueFilterForPlatt(tsYdata.ColView(i), tsYhat.ColView(i))
+		_, _, optThres := ComputeAupr(tsYdataCol, tsYhatCol)
 		thres.Set(0, i, optThres)
 	}
 	return thres

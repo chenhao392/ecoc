@@ -309,8 +309,10 @@ Sample usages:
 			c := 0
 			for m := 0; m < nK; m++ {
 				for n := 0; n < len(sigmaFctsSet); n++ {
-					tsYhat, _ := src.Platt(YhSet[c], tsYfold, YhSet[c])
+					tsYhat := src.Zscore(YhSet[c])
+					tsYhat, _ = src.Platt(tsYhat, tsYfold, tsYhat)
 					thres := src.FscoreThres(tsYfold, tsYhat)
+					//rebaData := src.RebalanceData(trainFold[i].Y)
 					//src.AccumPlatt(c, colSum, plattAB, plattAset, plattBset, plattCountSet)
 					//src.AccumThres(c, colSum, thresSet, thres)
 					src.AccumTsYdata(c, colSum, YhSet[c], tsYfold, YhPlattSet, yPlattSet)
@@ -351,15 +353,22 @@ Sample usages:
 		cBest := sortMap[0].Key
 		//Platt
 		//plattAB := src.SelectPlattAB(cBest, plattAset, plattBset, plattCountSet)
-		YhPlattScale, plattAB := src.Platt(YhPlattSet[cBest], yPlattSet[cBest], YhPlattSet[cBest])
+		YhPlattScale := src.Zscore(YhPlattSet[cBest])
+		YhPlattScale, plattAB := src.Platt(YhPlattScale, yPlattSet[cBest], YhPlattScale)
+		//YhPlattScale = src.Zscore(YhPlattScale)
+		//YhPlattScale = src.ProbScale(YhPlattScale)
 		thres := src.FscoreThres(yPlattSet[cBest], YhPlattScale)
 		//k and sigma
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
 		YhSet, _ := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
 		//trYdata = src.PosSelect(trYdata, colSum)
-		tsYhat := src.PlattScaleSet(YhSet[0], plattAB)
-
+		tsYhat := src.Zscore(YhSet[0])
+		tsYhat = src.PlattScaleSet(tsYhat, plattAB)
+		//tsYhat = src.Zscore(tsYhat)
+		//tsYhat = src.ProbScale(tsYhat)
+		//tsYhat, thres = src.PlattScaleSetPseudoLabel(tsYhat, trYdata, thres)
+		//rebaData := src.RebalanceData(trYdata)
 		//corresponding testing measures
 		c := 0
 		i := 0
