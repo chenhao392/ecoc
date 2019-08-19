@@ -228,7 +228,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 			//So yes for this implementation, as the penalty not mentioned in matlab code
 			//X: features, Y:label vector, bias,solver,cost,sensitiveness,stop,class_pelnalty
 			//LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 0, 1.0/lamda[i], 0.1, 0.001, nil)
-			LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 1, 1.0/lamda[i], 0.1, 0.000001, nil)
+			LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 1, 1.0/lamda[i], 0.1, 0.00001, nil)
 			w := LRmodel.W()
 			lastW := []float64{Pop(&w)}
 			w = append(lastW, w...)
@@ -252,7 +252,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 		Ymat.Set(i, 0, Y.At(i, 0))
 	}
 	//LRmodel := Train(X, Ymat, 1.0, 0, regulator, 0.1, 0.001, nil)
-	LRmodel := Train(X, Ymat, 1.0, 1, regulator, 0.1, 0.000001, nil)
+	LRmodel := Train(X, Ymat, 1.0, 1, regulator, 0.1, 0.00001, nil)
 	w := LRmodel.W()
 	lastW := []float64{Pop(&w)}
 	w = append(lastW, w...)
