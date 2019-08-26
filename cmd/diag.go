@@ -49,13 +49,15 @@ var diagCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
-		tsX, _ := cmd.Flags().GetString("tsX")
-		trX, _ := cmd.Flags().GetString("trX")
+		//tsX, _ := cmd.Flags().GetString("tsX")
+		//trX, _ := cmd.Flags().GetString("trX")
+		trYhPlattScale, _ := cmd.Flags().GetString("trYh")
+		tsYhPlattScale, _ := cmd.Flags().GetString("tsYh")
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		rankCut, _ := cmd.Flags().GetInt("c")
-		reg, _ := cmd.Flags().GetBool("r")
-		nFold, _ := cmd.Flags().GetInt("nFold")
+		//reg, _ := cmd.Flags().GetBool("r")
+		//nFold, _ := cmd.Flags().GetInt("nFold")
 		k, _ := cmd.Flags().GetInt("k")
 		s, _ := cmd.Flags().GetFloat64("s")
 
@@ -68,14 +70,17 @@ var diagCmd = &cobra.Command{
 		//read data
 		tsYdata, _, _, _ := src.ReadFile(tsY, true, true)
 		trYdata, _, _, _ := src.ReadFile(trY, true, true)
-		tsXdata, _, _, _ := src.ReadFile(tsX, false, false)
-		trXdata, _, _, _ := src.ReadFile(trX, false, false)
-
+		//tsXdata, _, _, _ := src.ReadFile(tsX, false, false)
+		//trXdata, _, _, _ := src.ReadFile(trX, false, false)
+		trYhPlattScaleData, _, _, _ := src.ReadFile(trYhPlattScale, false, false)
+		tsYhPlattScaleData, _, _, _ := src.ReadFile(tsYhPlattScale, false, false)
+		thres := src.FscoreThres(trYdata, trYhPlattScaleData)
+		fmt.Println(thres)
 		//run
-		YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
-		thres := src.FscoreThres(tsYdata, YhSet[0])
-		trYdata = src.PosSelect(trYdata, colSum)
-		tsYdata = src.PosSelect(tsYdata, colSum)
+		//YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
+		//thres := src.FscoreThres(trYdata, trYhPlattScaleData)
+		//trYdata = src.PosSelect(trYdata, colSum)
+		//tsYdata = src.PosSelect(tsYdata, colSum)
 		//rebaData := src.RebalanceData(trYdata)
 		//measures
 		testF1 := mat64.NewDense(1, 4, nil)
@@ -94,8 +99,9 @@ var diagCmd = &cobra.Command{
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
 			//microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
-			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thres, rankCut, false)
-
+			//accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thres, rankCut, false)
+			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, tsYhPlattScaleData, thres, rankCut, true)
+			fmt.Println(accuracy, microF1, microAupr, macroAupr)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
 			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -124,19 +130,21 @@ var diagCmd = &cobra.Command{
 		src.WriteFile(oFile, testMacroAupr)
 		oFile = "./" + resFolder + ".cvTesting.microAupr.txt"
 		src.WriteFile(oFile, testMicroAupr)
-		oFile = "./" + resFolder + ".test.probMatrix.txt"
-		src.WriteFile(oFile, YhSet[0])
-		oFile = "./" + resFolder + ".thres.txt"
-		src.WriteFile(oFile, thres)
+		//oFile = "./" + resFolder + ".test.probMatrix.txt"
+		//src.WriteFile(oFile, YhSet[0])
+		//oFile = "./" + resFolder + ".thres.txt"
+		//src.WriteFile(oFile, thres)
 		os.Exit(0)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(diagCmd)
-	diagCmd.PersistentFlags().String("tsX", "", "test FeatureSet")
+	//diagCmd.PersistentFlags().String("tsX", "", "test FeatureSet")
+	diagCmd.PersistentFlags().String("trYh", "", "")
 	diagCmd.PersistentFlags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
-	diagCmd.PersistentFlags().String("trX", "", "train FeatureSet")
+	//diagCmd.PersistentFlags().String("trX", "", "train FeatureSet")
+	diagCmd.PersistentFlags().String("tsYh", "", "")
 	diagCmd.PersistentFlags().String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
 	diagCmd.PersistentFlags().String("res", "resultDiag", "resultFolder")
 
@@ -144,6 +152,6 @@ func init() {
 	diagCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
 	diagCmd.PersistentFlags().Int("k", 9, "number of CCA dims")
 	diagCmd.PersistentFlags().Float64("s", 10000.0, "1/lamda^2")
-	diagCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
-	diagCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
+	//diagCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
+	//diagCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
 }

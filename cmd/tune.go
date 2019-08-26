@@ -415,6 +415,12 @@ Sample usages:
 		src.WriteFile(oFile, tsYhat)
 		oFile = "./" + resFolder + "/thres.txt"
 		src.WriteFile(oFile, thres)
+		oFile = "./" + resFolder + "/train.probMatrix.txt"
+		src.WriteFile(oFile, YhPlattScale)
+		oFile = "./" + resFolder + "/train.probMatrix.txt"
+		src.WriteFile(oFile, YhPlattScale)
+		oFile = "./" + resFolder + "/reorder.trMatrix.txt"
+		src.WriteFile(oFile, yPlattSet[cBest])
 
 		os.Exit(0)
 
