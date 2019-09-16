@@ -439,7 +439,7 @@ func deltaLossCal(Y *mat64.Dense, products *mat64.Dense, lamda float64, weights 
 }
 
 func RandListFromUniDist(length int) (values []float64) {
-	var UformDist = distuv.Uniform{Min: -0.0001, Max: 0.0001}
+	var UformDist = distuv.Uniform{Min: -0.00000001, Max: 0.00000001}
 	for k := 0; k < length; k++ {
 		value := UformDist.Rand()
 		values = append(values, value)

@@ -383,6 +383,8 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 			//fscore := 2 * pr * re / (pr + re)
 			//fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
 			fscore := 5.0 * tp / (p + 4.0*total)
+			//fscore := 10.0 * tp / (p + 9.0*total)
+			//fscore := 10.0 * tp / (p + 9.0*total)
 			//fscore := 4.0 * tp / (p + 3.0*total)
 			//fscore := 2.4 * tp / (p + 1.4*total)
 			//fscore := 2 * tp / (p + 1*total)
@@ -407,7 +409,7 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
 	}
 	aupr = aupr / 2
-	if maxFscore < float64(len(mapY))/float64(n)+0.05 {
+	if maxFscore < float64(len(mapY))/float64(n) {
 		return aupr, maxFscore, maxThres
 	}
 	return aupr, maxFscore, optThres
@@ -549,6 +551,7 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 		min := 0.0
 		for i := 0; i < nRow; i++ {
 			ele := (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / math.Exp(tsYhat.At(i, j))
+			//ele := (Sigmoid(tsYhat.At(i, j)) - Sigmoid(thresData.At(0, j))) / Sigmoid(tsYhat.At(i, j))
 			//ele := (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / math.Exp(thresData.At(0, j))
 			//sum += ele
 			if ele > max {
@@ -570,6 +573,12 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 	return tsYhat2, thresData2
 	//return tsYhat2
 
+}
+
+func Sigmoid(x float64) (y float64) {
+	y = (math.Exp(x) - math.Exp(-x)) / (math.Exp(x) + math.Exp(-x))
+	//y = x / (1 + math.Abs(x))
+	return y
 }
 
 func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64, tp int, fp int, fn int, tn int) {

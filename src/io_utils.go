@@ -180,10 +180,10 @@ func WriteFile(outFile string, data *mat64.Dense) (err error) {
 	nRow, nCol := data.Caps()
 	var ele string
 	for i := 0; i < nRow; i++ {
-		ele = strconv.FormatFloat(data.At(i, 0), 'f', 6, 64)
+		ele = strconv.FormatFloat(data.At(i, 0), 'f', 10, 64)
 		wr.WriteString(ele)
 		for j := 1; j < nCol; j++ {
-			ele = strconv.FormatFloat(data.At(i, j), 'f', 6, 64)
+			ele = strconv.FormatFloat(data.At(i, j), 'f', 10, 64)
 			wr.WriteString("\t")
 			wr.WriteString(ele)
 		}

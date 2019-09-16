@@ -127,7 +127,7 @@ Sample usages:
 			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
-		sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 400.0, 10000.0, 40000.0, 1000000.0}
+		sigmaFctsSet := []float64{0.0001, 0.0025, 0.01, 0.0178, 0.04, 0.09, 0.16, 0.25, 0.36, 0.49, 0.64, 0.81, 1, 1.23, 1.56, 2.04, 2.78, 4.0, 6.25, 11.11, 25.0, 100.0, 177.78, 400.0, 10000.0, 40000.0, 1000000.0}
 		//sigmaFctsSet := []float64{0.25, 1, 4.0, 25.0, 100.0, 400.0, 10000.0}
 		//kSet := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 		kSet := make([]int, 0)
@@ -415,8 +415,6 @@ Sample usages:
 		src.WriteFile(oFile, tsYhat)
 		oFile = "./" + resFolder + "/thres.txt"
 		src.WriteFile(oFile, thres)
-		oFile = "./" + resFolder + "/train.probMatrix.txt"
-		src.WriteFile(oFile, YhPlattScale)
 		oFile = "./" + resFolder + "/train.probMatrix.txt"
 		src.WriteFile(oFile, YhPlattScale)
 		oFile = "./" + resFolder + "/reorder.trMatrix.txt"
