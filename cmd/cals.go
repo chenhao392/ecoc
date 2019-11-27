@@ -67,11 +67,19 @@ a gene by feature matrix.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		inFile, _ := cmd.Flags().GetString("i")
 		threads, _ := cmd.Flags().GetInt("t")
-		data, rName, _, _ := src.ReadFile(inFile, true, false)
+		isColumn, _ := cmd.Flags().GetBool("c")
+		data := mat64.NewDense(0, 0, nil)
+		name := make([]string, 0)
+		if isColumn {
+			data, _, name, _ = src.ReadFile(inFile, false, true)
+			data = mat64.DenseCopyOf(data.T())
+		} else {
+			data, name, _, _ = src.ReadFile(inFile, true, false)
+		}
 		data2, _ := paraCov(data, threads)
 		_, nCol := data2.Caps()
-		for i := range rName {
-			fmt.Printf("%v", rName[i])
+		for i := range name {
+			fmt.Printf("%v", name[i])
 			for j := 0; j < nCol; j++ {
 				fmt.Printf("\t%1.6f", data2.At(i, j))
 			}
@@ -84,6 +92,7 @@ func init() {
 	rootCmd.AddCommand(calsCmd)
 	calsCmd.PersistentFlags().String("i", "", "tab delimited matrix")
 	calsCmd.PersistentFlags().Int("t", 1, "number of threads")
+	calsCmd.PersistentFlags().Bool("c", false, "column pairs calculation (rowise as default)")
 
 }
 

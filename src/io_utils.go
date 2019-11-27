@@ -128,7 +128,7 @@ func ReadFile(inFile string, rowName bool, colName bool) (dataR *mat64.Dense, rN
 		}
 	}
 	//shfit first rowName away if colName exist
-	if colName {
+	if colName && rowName {
 		Shift(&rName)
 	}
 	return data, rName, cName, nil

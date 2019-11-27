@@ -380,9 +380,9 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 			pr := tp / p
 			re := tp / total
 			//update Fscore and thres
-			//fscore := 2 * pr * re / (pr + re)
+			fscore := 2 * pr * re / (pr + re)
 			//fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
-			fscore := 5.0 * tp / (p + 4.0*total)
+			//fscore := 5.0 * tp / (p + 4.0*total)
 			//fscore := 10.0 * tp / (p + 9.0*total)
 			//fscore := 10.0 * tp / (p + 9.0*total)
 			//fscore := 4.0 * tp / (p + 3.0*total)

@@ -140,7 +140,7 @@ Sample usages:
 
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold)
-		for i := 0; i < 5; i++ {
+		for i := 0; i < nFold; i++ {
 			nPos := make([]int, nLabel)
 			for j := 0; j < nLabel; j++ {
 				for k := 0; k < len(folds[i]); k++ {
