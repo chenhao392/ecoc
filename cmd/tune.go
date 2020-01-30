@@ -25,16 +25,20 @@ package cmd
 import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
+	"log"
 	"math"
 	"math/rand"
 	"os"
 	"runtime"
+	"runtime/debug"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	//"sync"
 	//"unsafe"
 	"github.com/chenhao392/ecoc/src"
 	"github.com/spf13/cobra"
+	"time"
 )
 
 // tuneCmd represents the tune command
@@ -74,7 +78,8 @@ Sample usages:
   ecoc tune -trY training_label -tsY test_label -n net_file1,net_file2 -p prior_file1,prior_file2`,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		src.PrintMemUsage()
+		//src.PrintMemUsage()
+		//cpu profile
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
@@ -82,14 +87,28 @@ Sample usages:
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		rankCut, _ := cmd.Flags().GetInt("c")
+		scaleInd, _ := cmd.Flags().GetInt("s")
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 		isDada, _ := cmd.Flags().GetBool("ec")
 		alpha, _ := cmd.Flags().GetFloat64("alpha")
 		isAddPrior, _ := cmd.Flags().GetBool("addPrior")
 
+		currentTime := time.Now()
+		fmt.Println("Program started at: ", currentTime)
+		//out dir
+		err := os.MkdirAll("./"+resFolder, 0755)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		//pprof.StartCPUProfile(os.Stdout)
+		//defer pprof.StopCPUProfile()
+
+		//
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
+		debug.SetGCPercent(50)
 		//read data
 		tsYdata, tsRowName, _, _ := src.ReadFile(tsY, true, true)
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
@@ -103,10 +122,13 @@ Sample usages:
 		//network
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
+		network := mat64.NewDense(0, 0, nil)
+		idIdx := make(map[string]int)
+		idxToId := make(map[int]string)
 		for i := 0; i < len(inNetworkFile); i++ {
 			//idIdx as gene -> idx in net
-			fmt.Println(inNetworkFile[i])
-			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
+			fmt.Println("loading network file: ", inNetworkFile[i])
+			network, idIdx, idxToId = src.ReadNetwork(inNetworkFile[i])
 			//network, idIdx, idxToId := readNetwork(*inNetworkFile)
 			if !isAddPrior {
 				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
@@ -122,7 +144,7 @@ Sample usages:
 
 		_, nFea := trXdata.Caps()
 		nTr, nLabel := trYdata.Caps()
-		fmt.Println(nFea)
+		//fmt.Println(nFea)
 		if nFea < nLabel {
 			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
@@ -139,21 +161,7 @@ Sample usages:
 		}
 
 		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold)
-		for i := 0; i < nFold; i++ {
-			nPos := make([]int, nLabel)
-			for j := 0; j < nLabel; j++ {
-				for k := 0; k < len(folds[i]); k++ {
-					if trYdata.At(folds[i][k], j) == 1 {
-						nPos[j] += 1
-					}
-				}
-			}
-			for j := 0; j < nLabel; j++ {
-				fmt.Printf("\t%d", nPos[j])
-			}
-			fmt.Printf("\n")
-		}
+		folds := src.SOIS(trYdata, nFold, true)
 		//os.Exit(0)
 		//idxPerm := rand.Perm(nTr)
 		trainFold := make([]src.CvFold, nFold)
@@ -191,7 +199,7 @@ Sample usages:
 			//codes
 			for i := 0; i < len(inNetworkFile); i++ {
 				//idIdx as gene -> idx in net
-				network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
+				network, idIdx, idxToId = src.ReadNetwork(inNetworkFile[i])
 				if !isAddPrior {
 					sPriorData, ind := src.PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, isDada, alpha, &wg, &mutex)
 					_, nTrLabel := trYdataCV.Caps()
@@ -263,7 +271,7 @@ Sample usages:
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata)
 		}
 
-		fmt.Println("pass ecoc matrix")
+		fmt.Println("testing and nested training ecoc matrix after propagation generated.")
 		//min dims
 		//potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
@@ -277,6 +285,7 @@ Sample usages:
 		//measures
 		nL := nK * len(sigmaFctsSet)
 		trainF1 := mat64.NewDense(nL, 4, nil)
+		trainKprec := mat64.NewDense(nL, 4, nil)
 		trainAccuracy := mat64.NewDense(nL, 4, nil)
 		trainMicroAupr := mat64.NewDense(nL, 4, nil)
 		trainMacroAupr := mat64.NewDense(nL, 4, nil)
@@ -286,12 +295,6 @@ Sample usages:
 		testMicroAupr := mat64.NewDense(1, 4, nil)
 		testMacroAupr := mat64.NewDense(1, 4, nil)
 
-		//out dir
-		err := os.MkdirAll("./"+resFolder, 0755)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
 		//map
 		//plattAset := mat64.NewDense(nL, nLabel, nil)
 		//plattBset := mat64.NewDense(nL, nLabel, nil)
@@ -300,7 +303,6 @@ Sample usages:
 		yPlattSet := make(map[int]*mat64.Dense)
 		//thresSet := mat64.NewDense(nL, nLabel, nil)
 
-		fmt.Println("pass ecoc")
 		for i := 0; i < nFold; i++ {
 			YhSet, colSum := src.EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, &wg, &mutex)
 			//trYfold := src.PosSelect(trainFold[i].Y, colSum)
@@ -317,11 +319,15 @@ Sample usages:
 					//src.AccumPlatt(c, colSum, plattAB, plattAset, plattBset, plattCountSet)
 					//src.AccumThres(c, colSum, thresSet, thres)
 					src.AccumTsYdata(c, colSum, YhSet[c], tsYfold, YhPlattSet, yPlattSet)
-					accuracy, microF1, microAupr, macroAupr := src.Report(tsYfold, tsYhat, thres, rankCut, false)
+					accuracy, microF1, microAupr, macroAupr, kPrec := src.Report(tsYfold, tsYhat, thres, rankCut, false)
 					trainF1.Set(c, 0, float64(kSet[m]))
 					trainF1.Set(c, 1, sigmaFctsSet[n])
 					trainF1.Set(c, 2, trainF1.At(c, 2)+1.0)
 					trainF1.Set(c, 3, trainF1.At(c, 3)+microF1)
+					trainKprec.Set(c, 0, float64(kSet[m]))
+					trainKprec.Set(c, 1, sigmaFctsSet[n])
+					trainKprec.Set(c, 2, trainKprec.At(c, 2)+1.0)
+					trainKprec.Set(c, 3, trainKprec.At(c, 3)+kPrec)
 					trainAccuracy.Set(c, 0, float64(kSet[m]))
 					trainAccuracy.Set(c, 1, sigmaFctsSet[n])
 					trainAccuracy.Set(c, 2, trainAccuracy.At(c, 2)+1.0)
@@ -344,7 +350,9 @@ Sample usages:
 		var sortMap []kv
 		n, _ := trainMicroAupr.Caps()
 		for i := 0; i < n; i++ {
-			sortMap = append(sortMap, kv{i, trainMicroAupr.At(i, 3)})
+			sortMap = append(sortMap, kv{i, trainKprec.At(i, 3)})
+			//sortMap = append(sortMap, kv{i, trainMicroAupr.At(i, 3)})
+			//sortMap = append(sortMap, kv{i, trainAccuracy.At(i, 3)})
 		}
 		sort.Slice(sortMap, func(i, j int) bool {
 			return sortMap[i].Value > sortMap[j].Value
@@ -355,17 +363,23 @@ Sample usages:
 		//Platt
 		//plattAB := src.SelectPlattAB(cBest, plattAset, plattBset, plattCountSet)
 		YhPlattScale := src.Zscore(YhPlattSet[cBest])
-		YhPlattScale, plattAB := src.Platt(YhPlattScale, yPlattSet[cBest], YhPlattScale)
+		plattAB := mat64.NewDense(0, 0, nil)
+		if scaleInd == 1 {
+			YhPlattScale, plattAB = src.Platt(YhPlattScale, yPlattSet[cBest], YhPlattScale)
+		}
 		//YhPlattScale = src.Zscore(YhPlattScale)
 		//YhPlattScale = src.ProbScale(YhPlattScale)
 		thres := src.FscoreThres(yPlattSet[cBest], YhPlattScale)
+		//thres := src.DefaultThres(yPlattSet[cBest], YhPlattScale)
 		//k and sigma
 		kSet = []int{int(trainMicroAupr.At(cBest, 0))}
 		sigmaFctsSet = []float64{trainMicroAupr.At(cBest, 1)}
 		YhSet, _ := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
 		//trYdata = src.PosSelect(trYdata, colSum)
 		tsYhat := src.Zscore(YhSet[0])
-		tsYhat = src.PlattScaleSet(tsYhat, plattAB)
+		if scaleInd == 1 {
+			tsYhat = src.PlattScaleSet(tsYhat, plattAB)
+		}
 		//tsYhat = src.Zscore(tsYhat)
 		//tsYhat = src.ProbScale(tsYhat)
 		//tsYhat, thres = src.PlattScaleSetPseudoLabel(tsYhat, trYdata, thres)
@@ -374,7 +388,7 @@ Sample usages:
 		c := 0
 		i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
-			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, tsYhat, thres, rankCut, false)
+			accuracy, microF1, microAupr, macroAupr, _ := src.Report(tsYdata, tsYhat, thres, rankCut, false)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])
 			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
@@ -420,6 +434,21 @@ Sample usages:
 		oFile = "./" + resFolder + "/reorder.trMatrix.txt"
 		src.WriteFile(oFile, yPlattSet[cBest])
 
+		//mem profile
+		memprofile := resFolder + "/mem.prof"
+		f, err2 := os.Create(memprofile)
+		if err2 != nil {
+			log.Fatal("could not create memory profile: ", err2)
+		}
+		defer f.Close()
+		runtime.GC() // get up-to-date statistics
+		if err2 := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err2)
+		}
+		defer f.Close()
+
+		currentTime = time.Now()
+		fmt.Println("Program finished at: ", currentTime)
 		os.Exit(0)
 
 	},
@@ -436,6 +465,7 @@ func init() {
 	tuneCmd.PersistentFlags().String("p", "", "addtional prior file, use together with addPrior flag")
 	tuneCmd.PersistentFlags().Int("t", 48, "number of threads")
 	tuneCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
+	tuneCmd.PersistentFlags().Int("s", 0, "Probability scale method, 0 for platt, 1 for zscores")
 	tuneCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
 	tuneCmd.PersistentFlags().Bool("addPrior", false, "adding additional priors, default false")
 	tuneCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")

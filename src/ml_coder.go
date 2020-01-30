@@ -42,7 +42,9 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 }
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
+	//fmt.Println("start cg label: ", i)
 	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
+	//fmt.Println("end cg label: ", i)
 	mutex.Lock()
 	sigma.Set(0, i, math.Sqrt(optMSE))
 	//bias term for tsXdata added before
@@ -65,7 +67,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
 	//SOIS stratification
-	folds := SOIS(trYdata, nFold)
+	folds := SOIS(trYdata, nFold, false)
 	//vars
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
@@ -127,7 +129,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		//	}
 		//}
 	}
-	fmt.Println("pass step 1 coding\n")
+	fmt.Println("step 1: linear code calculated.")
 	//cca
 	B := mat64.NewDense(0, 0, nil)
 	if !reg {
@@ -142,7 +144,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		//_, B = ccaProjectTwoMatrix(trXdataB, trYdata)
 		B = ccaProject(trXdataB, trYdata)
 	}
-	fmt.Println("pass step 2 cca coding\n")
+	fmt.Println("step 2: cca code calculated.")
 
 	//CCA code
 	trY_Cdata := mat64.NewDense(0, 0, nil)
@@ -159,7 +161,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
 	}
 	wg.Wait()
-	fmt.Println("pass step 3 cg decoding\n")
+	fmt.Println("step 3: cg decoding finihsed.")
 	//decoding and step 4
 	c := 0
 	wg.Add(nK * len(sigmaFctsSet))
@@ -269,10 +271,10 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 	return wMat, regulator, errFinal, label
 }
 func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
-	lamda := []float64{0.000000000001, 0.000000000004, 0.00000000001, 0.00000000004, 0.0000000001, 0.0000000004, 0.000000001, 0.000000004, 0.00000001, 0.00000004, 0.0000001, 0.0000004, 0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	//lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	//lamda := []float64{0.000000000001, 0.000000000004, 0.00000000001, 0.00000000004, 0.0000000001, 0.0000000004, 0.000000001, 0.000000004, 0.00000001, 0.00000004, 0.0000001, 0.0000004, 0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	//lamda := []float64{0.01, 0.1, 1, 10, 100, 1000, 10000}
 	//err := []float64{0.01, 0, 0, 0, 0, 0, 0}
 	//lamda := make([]float64, 0)
@@ -494,6 +496,7 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float
 
 		for deltaLoss > 0.0000000001 {
 			step = step / 10
+			//fmt.Println("step and dLoss: ", step, deltaLoss)
 			//update weight
 			for k := 0; k < p; k++ {
 				weights.Set(k, 0, preWeights.At(k, 0)+step*cg.At(k, 0))
@@ -501,6 +504,10 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float
 			products.Mul(trFoldX, weights)
 			gradient = gradientCal(lamda, weights, trFoldX, trFoldY, products)
 			deltaLoss = deltaLossCal(trFoldY, products, lamda, weights, preProducts, preWeights)
+			if step == 0.0 {
+				fmt.Println("early stop at conjugate gradient.")
+				break
+			}
 		}
 		maxDiff = maxDiffCal(products, preProducts, n)
 	}
@@ -533,26 +540,33 @@ func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat6
 	}
 	//init index
 	i := 0
+	posFct := mat64.NewDense(1, k, nil)
+	negFct := mat64.NewDense(1, k, nil)
 	for ind[i] > 0 {
 		logPos := math.Log(tsY_Prob.At(rowIdx, i))
 		logNeg := math.Log(1 - tsY_Prob.At(rowIdx, i))
-		posFct := mat64.NewDense(1, k, nil)
-		negFct := mat64.NewDense(1, k, nil)
+		//reset posFct and negFct to zeros
+		for l := 0; l < k; l++ {
+			negFct.Set(0, l, 0)
+			posFct.Set(0, l, 0)
+		}
 		for j := 0; j < nLabel; j++ {
 			if j == i || Q.At(0, j) == 0 {
 				continue
 			}
-			negFct = fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j, rowIdx)
-			//negFct = fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j)
+			//negFct = fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j, rowIdx)
+			fOrderNegFctCal(negFct, tsY_C, Bsub, Q, j, rowIdx)
 			//second order, n is j2, golang is 0 based, so that the for loop is diff on max
 			for n := 0; n < j; n++ {
 				if n == i || Q.At(0, n) == 0 {
 					continue
 				}
-				negFct = sOrderNegFctCal(negFct, Bsub, Q, j, n)
+				//negFct = sOrderNegFctCal(negFct, Bsub, Q, j, n)
+				sOrderNegFctCal(negFct, Bsub, Q, j, n)
 			}
 			//posFct
-			posFct = posFctCal(posFct, Bsub, Q, i, j)
+			//posFct = posFctCal(posFct, Bsub, Q, i, j)
+			posFctCal(posFct, Bsub, Q, i, j)
 		}
 		//terms outside loop
 		for l := 0; l < k; l++ {
@@ -615,35 +629,44 @@ func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat6
 	return tsYhatData
 }
 
-func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, rowIdx int) (newNegFct *mat64.Dense) {
+func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, rowIdx int) {
+	//func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, rowIdx int) (newNegFct *mat64.Dense) {
 	//func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int) (newNegFct *mat64.Dense) {
 	_, k := negFct.Caps()
-	newNegFct = mat64.NewDense(1, k, nil)
+	//newNegFct = mat64.NewDense(1, k, nil)
 	for i := 0; i < k; i++ {
 		value := Bsub.At(j, i) * Q.At(0, j)
-		newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
+		negFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
+		//newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
 		//value := Bsub.At(j, i) * Bsub.At(j, i) * Q.At(0, j)
 		//newNegFct.Set(0, i, negFct.At(0, i)+value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
 	}
-	return newNegFct
+	return
+	//return newNegFct
 }
-func sOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, n int) (newNegFct *mat64.Dense) {
+func sOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, n int) {
+	//func sOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, n int) (newNegFct *mat64.Dense) {
 	_, k := negFct.Caps()
-	newNegFct = mat64.NewDense(1, k, nil)
+	//newNegFct = mat64.NewDense(1, k, nil)
 	for m := 0; m < k; m++ {
 		value := 2 * Bsub.At(j, m) * Bsub.At(n, m) * Q.At(0, j) * Q.At(0, n)
-		newNegFct.Set(0, m, negFct.At(0, m)+value)
+		//newNegFct.Set(0, m, negFct.At(0, m)+value)
+		negFct.Set(0, m, negFct.At(0, m)+value)
 	}
-	return newNegFct
+	//return newNegFct
+	return
 }
-func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, i int, j int) (newPosFct *mat64.Dense) {
+func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, i int, j int) {
+	//func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, i int, j int) (newPosFct *mat64.Dense) {
 	_, k := posFct.Caps()
-	newPosFct = mat64.NewDense(1, k, nil)
+	//newPosFct = mat64.NewDense(1, k, nil)
 	for m := 0; m < k; m++ {
 		value := 2 * Bsub.At(i, m) * Bsub.At(j, m) * Q.At(0, j)
-		newPosFct.Set(0, m, posFct.At(0, m)+value)
+		//newPosFct.Set(0, m, posFct.At(0, m)+value)
+		posFct.Set(0, m, posFct.At(0, m)+value)
 	}
-	return newPosFct
+	//return newPosFct
+	return
 }
 
 func addBiasTerm(len int, mat *mat64.Dense) (mat2 *mat64.Dense) {

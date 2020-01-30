@@ -21,8 +21,8 @@ type combine struct {
 	Combine []int
 }
 
-func SOIS(trY *mat64.Dense, nFold int) (folds map[int][]int) {
-	nRow, _ := trY.Caps()
+func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
+	nRow, nLabel := trY.Caps()
 	rowUsed := make(map[int]bool)
 	allCombine := make(map[string]float64)
 	perRowCombine := make(map[int][][]int)
@@ -147,20 +147,45 @@ func SOIS(trY *mat64.Dense, nFold int) (folds map[int][]int) {
 		}
 		key = mostDemandCombine(sampleWithCombineMap)
 	}
-	//all negative Rows
-	nNeg := make([]int, nFold)
-	for j := 0; j < len(allNegRow); j++ {
+	//balance negative /positive ratio
+	nNeg := len(allNegRow)
+	//nPos := nRow - nNeg
+	//if nNeg/nPos > 1000 {
+	//	if isOutInfo {
+	//		fmt.Println("negative instance", nNeg, "is too many for ", nPos, " postives.")
+	//		fmt.Println("down sampling negatives to 2 * ", nPos)
+	//	}
+	//	nNeg = nPos * 1000
+	//}
+
+	nNegPerFold := make([]int, nFold)
+	for j := 0; j < nNeg; j++ {
 		iFold := j % nFold
-		nNeg[iFold] += 1
-		//fmt.Println(iFold)
+		nNegPerFold[iFold] += 1
 		folds[iFold] = append(folds[iFold], allNegRow[j])
 		perFold[iFold] -= 1.0
 	}
-	for j := 0; j < nFold; j++ {
-		fmt.Printf("\t%d", nNeg[j])
+	if isOutInfo {
+		fmt.Println("negatives per fold.")
+		for j := 0; j < nFold; j++ {
+			fmt.Printf("\t%d", nNegPerFold[j])
+		}
+		fmt.Println("\npositive matrix fold by label.")
+		for i := 0; i < nFold; i++ {
+			nPos := make([]int, nLabel)
+			for j := 0; j < nLabel; j++ {
+				for k := 0; k < len(folds[i]); k++ {
+					if trY.At(folds[i][k], j) == 1 {
+						nPos[j] += 1
+					}
+				}
+			}
+			for j := 0; j < nLabel; j++ {
+				fmt.Printf("\t%d", nPos[j])
+			}
+			fmt.Printf("\n")
+		}
 	}
-	fmt.Printf("\n")
-
 	return folds
 }
 func remove(slice []int, i int) []int {

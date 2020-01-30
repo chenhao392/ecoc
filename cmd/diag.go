@@ -100,7 +100,7 @@ var diagCmd = &cobra.Command{
 		for j := 0; j < len(sigmaFctsSet); j++ {
 			//microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
 			//accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thres, rankCut, false)
-			accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, tsYhPlattScaleData, thres, rankCut, true)
+			accuracy, microF1, microAupr, macroAupr, _ := src.Report(tsYdata, tsYhPlattScaleData, thres, rankCut, true)
 			fmt.Println(accuracy, microF1, microAupr, macroAupr)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])

@@ -35,14 +35,14 @@ var reportCmd = &cobra.Command{
 		tsY, _ := cmd.Flags().GetString("tsY")
 		tsYh, _ := cmd.Flags().GetString("i")
 		rankCut, _ := cmd.Flags().GetInt("r")
-		rebaFile, _ := cmd.Flags().GetString("s")
+		thresFile, _ := cmd.Flags().GetString("s")
 
 		tsYdata, _, _, _ := src.ReadFile(tsY, true, true)
 		tsYhat, _, _, _ := src.ReadFile(tsYh, false, false)
-		rebaData, _, _, _ := src.ReadFile(rebaFile, false, false)
-		accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, tsYhat, rebaData, rankCut, true)
-		fmt.Println(accuracy, microF1, microAupr, macroAupr)
-
+		thresData, _, _, _ := src.ReadFile(thresFile, false, false)
+		accuracy, microF1, microAupr, macroAupr, kPrec := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
+		//fmt.Println(accuracy, microF1, microAupr, macroAupr)
+		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f kPrec: %1.3f\n", accuracy, microF1, microAupr, macroAupr, kPrec)
 	},
 }
 
@@ -50,6 +50,6 @@ func init() {
 	rootCmd.AddCommand(reportCmd)
 	reportCmd.PersistentFlags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "true testing data")
 	reportCmd.PersistentFlags().String("i", "", "predictions")
-	reportCmd.PersistentFlags().String("s", "", "rebalance")
+	reportCmd.PersistentFlags().String("s", "", "thresholds")
 	reportCmd.PersistentFlags().Int("r", 3, "predictions")
 }
