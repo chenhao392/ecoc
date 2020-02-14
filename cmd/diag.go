@@ -27,19 +27,10 @@ import (
 	"os"
 	"runtime"
 	//"strings"
-	"sync"
 	//"unsafe"
 	"github.com/chenhao392/ecoc/src"
 	"github.com/spf13/cobra"
 )
-
-type kv struct {
-	Key   int
-	Value float64
-}
-
-var wg sync.WaitGroup
-var mutex sync.Mutex
 
 // diagCmd represents the diag command
 var diagCmd = &cobra.Command{
@@ -74,7 +65,7 @@ var diagCmd = &cobra.Command{
 		//trXdata, _, _, _ := src.ReadFile(trX, false, false)
 		trYhPlattScaleData, _, _, _ := src.ReadFile(trYhPlattScale, false, false)
 		tsYhPlattScaleData, _, _, _ := src.ReadFile(tsYhPlattScale, false, false)
-		thres := src.FscoreThres(trYdata, trYhPlattScaleData)
+		thres := src.FscoreThres(trYdata, trYhPlattScaleData, 1.0)
 		fmt.Println(thres)
 		//run
 		//YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
@@ -100,7 +91,7 @@ var diagCmd = &cobra.Command{
 		for j := 0; j < len(sigmaFctsSet); j++ {
 			//microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
 			//accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thres, rankCut, false)
-			accuracy, microF1, microAupr, macroAupr, _ := src.Report(tsYdata, tsYhPlattScaleData, thres, rankCut, true)
+			accuracy, microF1, microAupr, macroAupr, _, _ := src.Report(tsYdata, tsYhPlattScaleData, thres, rankCut, true)
 			fmt.Println(accuracy, microF1, microAupr, macroAupr)
 			testF1.Set(c, 0, float64(kSet[i]))
 			testF1.Set(c, 1, sigmaFctsSet[j])

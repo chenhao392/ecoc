@@ -1,12 +1,69 @@
 package src
 
 import (
-	//	"fmt"
+	"fmt"
 	"github.com/gonum/matrix/mat64"
+	"github.com/wangjohn/quickselect"
+	//"gonum.org/v1/gonum/mat"
+	//"github.com/montanaflynn/stats"
+	//"os"
+	//"github.com/pa-m/sklearn/preprocessing"
 	"math"
-	//	"os"
+	"runtime"
 	"sort"
+	"sync"
 )
+
+type kv struct {
+	Key   int
+	Value float64
+}
+
+func LabelRelationship(trYdata *mat64.Dense) (posLabelRls *mat64.Dense, negLabelRls *mat64.Dense) {
+	nRow, nCol := trYdata.Caps()
+	posLabelRls = mat64.NewDense(nCol, nCol, nil)
+	negLabelRls = mat64.NewDense(nCol, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		//colSums
+		jColSum := 0.0
+		for i := 0; i < nRow; i++ {
+			if trYdata.At(i, j) == 1.0 {
+				jColSum += 1.0
+			}
+		}
+		term2 := jColSum / float64(nRow)
+		//comment out, for simplicity in MultiPabelRecalibrate, for k = j + 1; k < nCol; k++ {
+		for k := 0; k < nCol; k++ {
+			if k != j {
+				nPos := 0.0
+				nNeg := 0.0
+				//conditional positive influence from label k to label j
+				nConPos := 0.0
+				nConNeg := 0.0
+				for i := 0; i < nRow; i++ {
+					if trYdata.At(i, k) == 1.0 {
+						nPos += 1.0
+						if trYdata.At(i, j) == 1.0 {
+							nConPos += 1.0
+						}
+					} else {
+						nNeg += 1.0
+						if trYdata.At(i, j) == 1.0 {
+							nConNeg += 1.0
+						}
+					}
+				}
+				//pos and neg calculation
+				posRls := nConPos/nPos - term2
+				negRls := nConNeg/nNeg - term2
+				posLabelRls.Set(k, j, posRls)
+				negLabelRls.Set(k, j, negRls)
+			}
+		}
+	}
+	// note this is an upper right filled matrix and the influence go from row index to col index
+	return posLabelRls, negLabelRls
+}
 
 func SelectPlattAB(cBest int, plattASet *mat64.Dense, plattBSet *mat64.Dense, plattCountSet *mat64.Dense) (plattAB *mat64.Dense) {
 	_, nCol := plattASet.Caps()
@@ -55,11 +112,115 @@ func Platt(trYhat *mat64.Dense, trY *mat64.Dense, tsYhat *mat64.Dense) (tsYhh *m
 	return tsYhh, plattAB
 }
 
-func TmmFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYhat *mat64.Vector, trY *mat64.Vector) {
-	type kv struct {
-		Key   int
-		Value float64
+//chop scale to 0 - 1 range
+func PlattChopScale(tsY *mat64.Dense, tsYhh *mat64.Dense) (maxArr []float64) {
+	nRow, nCol := tsYhh.Caps()
+	maxArr = make([]float64, 0)
+	//arr := make([]float64, 0)
+	//m := preprocessing.NewPowerTransformer()
+	for j := 0; j < nCol; j++ {
+		//colMat := mat.NewDense(nRow, 1, nil)
+		//for i := 0; i < nRow; i++ {
+		//	colMat.Set(i, 0, tsYhh.At(i, j))
+		//}
+		//colMat2, _ := m.FitTransform(colMat, nil)
+
+		max := -100000000.0
+		min := 100000000.0
+		for i := 0; i < nRow; i++ {
+			//arr = append(arr, tsYhh.At(i, j))
+			ele := tsYhh.At(i, j)
+			//fix NaN
+			if math.IsNaN(ele) {
+				ele = 0.0
+				tsYhh.Set(i, j, 0.0)
+			}
+			//min max
+			if tsY.At(i, j) == 1.0 && ele > max {
+				max = ele
+			}
+			//add ele >0, avoiding gap between last non-zero to zero being large
+			if ele < min {
+				min = ele
+			}
+			//}
+
+		}
+		//med, _ := stats.Median(arr)
+		//for i := 0; i < nRow; i++ {
+		//	arr[i] = math.Abs(arr[i] - med)
+		//}
+		//mad, _ := stats.Median(arr)
+		_, pAupr, _, thres := ComputeAupr(tsY.ColView(j), tsYhh.ColView(j), 0.1)
+		if pAupr > 0.1 {
+			max = thres
+		}
+		if max > 1.0 {
+			max = 1.0
+		}
+		maxArr = append(maxArr, max)
+		mm := max - min
+		for i := 0; i < nRow; i++ {
+			//ele := 0.5 + (tsYhh.At(i, j)-med)/(2.9652*mad)
+			ele := (tsYhh.At(i, j) - min) / mm
+			if ele > 1.0 {
+				tsYhh.Set(i, j, 1.0)
+			} else {
+				//ele = math.Log(ele)
+				tsYhh.Set(i, j, ele)
+			}
+			//} else {
+			//	tsYhh.Set(i, j, 0.0)
+			//}
+			//tsYhh.Set(i, j, colMat2.At(i, 0))
+		}
 	}
+	return maxArr
+}
+
+//chop scale to 0 - 1 range
+func TestDataPlattChopScale(tsYhh *mat64.Dense, maxArr []float64) {
+	nRow, nCol := tsYhh.Caps()
+	for j := 0; j < nCol; j++ {
+
+		min := 100000000.0
+		max := -100000000.0
+		for i := 0; i < nRow; i++ {
+			ele := tsYhh.At(i, j)
+			if ele < min {
+				min = ele
+			}
+			if ele > max {
+				max = ele
+			}
+
+		}
+		if j == 0 {
+			fmt.Println("train max: ", maxArr[j])
+		}
+		if maxArr[j] > max {
+			maxArr[j] = max
+		}
+		mm := maxArr[j] - min
+		if j == 0 {
+			fmt.Println("test max: ", maxArr[j], min, max)
+			for i := 0; i < nRow; i++ {
+				fmt.Println("ele:\t", tsYhh.At(i, j))
+			}
+		}
+		for i := 0; i < nRow; i++ {
+			ele := tsYhh.At(i, j)
+			if ele >= maxArr[j] {
+				tsYhh.Set(i, j, 1.0)
+				fmt.Println("fromTo:", ele, 1.0)
+			} else {
+				tsYhh.Set(i, j, (ele-min)/mm)
+				fmt.Println("fromTo:", ele, (ele-min)/mm)
+			}
+		}
+	}
+}
+func TmmFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYhat *mat64.Vector, trY *mat64.Vector) {
 	n := inTrYhat.Len()
 	var sortYh []kv
 	for i := 0; i < n; i++ {
@@ -193,10 +354,10 @@ func PlattScaleSetPseudoLabel(tsYhat *mat64.Dense, trYdata *mat64.Dense, thres *
 }
 
 func pseudoLabel(nPos int, Yh *mat64.Vector) (pseudoY *mat64.Vector) {
-	type kv struct {
-		Key   int
-		Value float64
-	}
+	//type kv struct {
+	//	Key   int
+	//	Value float64
+	//}
 	n := Yh.Len()
 	var sortYh []kv
 	for i := 0; i < n; i++ {
@@ -350,4 +511,151 @@ func PlattParameterEst(Yh *mat64.Vector, Y *mat64.Vector) (A float64, B float64)
 		//reach max
 	}
 	return A, B
+}
+
+func YhPlattSetUpdate(iFold int, c int, YhPlattSetCalibrated map[int]*mat64.Dense, tsYhat *mat64.Dense, iFoldmat *mat64.Dense) {
+	nRow := 0
+	nRowTotal, nCol := YhPlattSetCalibrated[c].Caps()
+	for i := 0; i < nRowTotal; i++ {
+		if iFoldmat.At(i, 0) == float64(iFold) {
+			for j := 0; j < nCol; j++ {
+				YhPlattSetCalibrated[c].Set(i, j, tsYhat.At(nRow, j))
+			}
+			nRow += 1
+		}
+	}
+}
+
+func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Dense, X *mat64.Dense, iFoldmat *mat64.Dense) (yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, xTest *mat64.Dense, tsYhat *mat64.Dense, tsYfold *mat64.Dense) {
+	nRow := 0
+	nRowTotal, nCol := Y.Caps()
+	_, nColX := X.Caps()
+	for i := 0; i < nRowTotal; i++ {
+		if iFoldmat.At(i, 0) != float64(iFold) {
+			nRow += 1
+		}
+	}
+
+	yPlattTrain = mat64.NewDense(nRow, nCol, nil)
+	yPredTrain = mat64.NewDense(nRow, nCol, nil)
+	xTrain = mat64.NewDense(nRow, nColX, nil)
+	xTest = mat64.NewDense(nRowTotal-nRow, nColX, nil)
+	tsYhat = mat64.NewDense(nRowTotal-nRow, nCol, nil)
+	tsYfold = mat64.NewDense(nRowTotal-nRow, nCol, nil)
+	nRow = 0
+	nRowTest := 0
+	for i := 0; i < nRowTotal; i++ {
+		if iFoldmat.At(i, 0) != float64(iFold) {
+			for j := 0; j < nCol; j++ {
+				yPlattTrain.Set(nRow, j, Y.At(i, j))
+				yPredTrain.Set(nRow, j, predBinY.At(i, j))
+			}
+			for j := 0; j < nColX; j++ {
+				xTrain.Set(nRow, j, X.At(i, j))
+			}
+			nRow += 1
+		} else {
+			for j := 0; j < nCol; j++ {
+				tsYhat.Set(nRowTest, j, Yh.At(i, j))
+				tsYfold.Set(nRowTest, j, Y.At(i, j))
+			}
+			for j := 0; j < nColX; j++ {
+				xTest.Set(nRowTest, j, X.At(i, j))
+			}
+			nRowTest += 1
+		}
+	}
+	return yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold
+}
+
+func MultiLabelRecalibrate(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
+	nRow, nCol := tsYhat.Caps()
+	tsYhatCal = mat64.NewDense(nRow, nCol, nil)
+	wg.Add(nRow)
+	for i := 0; i < nRow; i++ {
+		go single_MultiLabelRecalibrate(kNN, i, nCol, tsYhatCal, tsYhat, xTest, xTrain, yPlattTrain, yPredTrain, posLabelRls, negLabelRls, wg, mutex)
+	}
+	wg.Wait()
+	runtime.GC()
+	return tsYhatCal
+}
+
+func single_MultiLabelRecalibrate(kNN int, i int, nCol int, tsYhatCal *mat64.Dense, tsYhat *mat64.Dense, xTest *mat64.Dense, xTrain *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	idxArr := DistanceTopK(kNN, i, xTest, xTrain)
+	weight1 := 0.0
+	weight2 := 0.0
+	labelRls := 0.0
+	for j := 0; j < nCol; j++ {
+		for k := 0; k < kNN; k++ {
+			if yPlattTrain.At(idxArr[k], j) == yPredTrain.At(idxArr[k], j) {
+				weight1 += 1.0
+			}
+		}
+		weight1 = weight1 / float64(kNN)
+		//if math.IsNaN(weight1) {
+		//	fmt.Println("weight 1 is NaN at", i, j)
+		//	os.Exit(0)
+		//}
+		weight2 = 1.0 - weight1
+		//label influence
+		labelRls = 0.0
+		for m := 0; m < nCol; m++ {
+			// m == j cases are set as zero in LabelRelationship
+			labelRls += tsYhat.At(i, m)*posLabelRls.At(m, j) + (1-tsYhat.At(i, m))*negLabelRls.At(m, j)
+		}
+		prob := weight1*tsYhat.At(i, j) + weight2*labelRls/float64(nCol-1)
+		mutex.Lock()
+		tsYhatCal.Set(i, j, prob)
+		mutex.Unlock()
+	}
+}
+
+type ByValue []kv
+
+func (a ByValue) Len() int           { return len(a) }
+func (a ByValue) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByValue) Less(i, j int) bool { return a[i].Value < a[j].Value }
+func DistanceTopK(k int, rowIdx int, tsYhat *mat64.Dense, yProbTrain *mat64.Dense) (idxArr []int) {
+
+	var selectDis ByValue
+	//maxDis := 0.0
+	//disArr = make([]float64, 0)
+	//disAll := make([]float64, 0)
+	nRow, nCol := yProbTrain.Caps()
+	//a and b init out for better mem efficient
+	a := 0.0
+	b := 0.0
+	for i := 0; i < nRow; i++ {
+		dis := 0.0
+		for j := 0; j < nCol; j++ {
+			//hassanat distance, note all value after propagation are larger than 0, thus no negative value considerred
+			a = tsYhat.At(rowIdx, j)
+			b = yProbTrain.At(i, j)
+			dis = dis + 1.0 - (1.0+math.Min(a, b))/(1.0+math.Max(a, b))
+			//dis += math.Sqrt(math.Pow(tsYhat.At(rowIdx, j)-yProbTrain.At(i, j), 2))
+		}
+		selectDis = append(selectDis, kv{i, dis})
+		//disAll = append(disAll, dis)
+	}
+	//sort.Slice(sortDis, func(i, j int) bool {
+	//	return sortDis[i].Value < sortDis[j].Value
+	//})
+	quickselect.QuickSelect(ByValue(selectDis), k)
+	//fix for 0 in disAll[i] and maxDis as zero, thus empty return array errors
+	//maxDis = sortDis[k-1].Value
+	//tick := 0
+	//for i := 0; i < nRow; i++ {
+	//	if disAll[i] <= maxDis && tick < k {
+	//      //disArr = append(disArr, maxDis/disAll[i])
+	//		disArr = append(disArr, 1.0)
+	//		idxArr = append(idxArr, i)
+	//		tick += 1
+	//	}
+	//}
+	//disArr normalized by maxDis
+	for i := 0; i < k; i++ {
+		idxArr = append(idxArr, selectDis[i].Key)
+	}
+	return idxArr
 }

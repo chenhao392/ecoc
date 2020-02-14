@@ -22,13 +22,20 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"os"
+	"sync"
 )
 
+type kv struct {
+	Key   int
+	Value float64
+}
+
+var wg sync.WaitGroup
+var mutex sync.Mutex
 var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands

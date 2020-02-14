@@ -1,8 +1,8 @@
 package src
 
 import (
-	"fmt"
 	"github.com/gonum/matrix/mat64"
+	"log"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -166,11 +166,15 @@ func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
 		perFold[iFold] -= 1.0
 	}
 	if isOutInfo {
-		fmt.Println("negatives per fold.")
+		log.Print("SOIS folds generated\n")
+		log.SetFlags(0)
+		log.Print("negatives per fold.")
+		str := ""
 		for j := 0; j < nFold; j++ {
-			fmt.Printf("\t%d", nNegPerFold[j])
+			str = str + "\t" + strconv.Itoa(nNegPerFold[j])
 		}
-		fmt.Println("\npositive matrix fold by label.")
+		log.Print(str)
+		log.Print("\npositive per fold(row) per label(column).")
 		for i := 0; i < nFold; i++ {
 			nPos := make([]int, nLabel)
 			for j := 0; j < nLabel; j++ {
@@ -180,10 +184,11 @@ func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
 					}
 				}
 			}
+			str = ""
 			for j := 0; j < nLabel; j++ {
-				fmt.Printf("\t%d", nPos[j])
+				str = str + "\t" + strconv.Itoa(nPos[j])
 			}
-			fmt.Printf("\n")
+			log.Print(str)
 		}
 	}
 	return folds

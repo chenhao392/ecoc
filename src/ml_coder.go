@@ -1,7 +1,7 @@
 package src
 
 import (
-	"fmt"
+	//"fmt"
 	//linear "github.com/chenhao392/lineargo"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
@@ -42,9 +42,7 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 }
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
-	//fmt.Println("start cg label: ", i)
 	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
-	//fmt.Println("end cg label: ", i)
 	mutex.Lock()
 	sigma.Set(0, i, math.Sqrt(optMSE))
 	//bias term for tsXdata added before
@@ -53,17 +51,11 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[
 	for j := 0; j < nTs; j++ {
 		tsY_C.Set(j, i, element.At(j, 0))
 	}
-	//element = mat64.NewDense(0, 0, nil)
-	//element.Mul(trXdataB, beta)
-	//for j := 0; j < nTr; j++ {
-	//	trY_C.Set(j, i, element.At(j, 0))
-	//}
 	mutex.Unlock()
 }
 
 func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, sigmaFctsSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
 	YhSet = make(map[int]*mat64.Dense)
-	//thresSet = make(map[int]*mat64.Dense)
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
 	//SOIS stratification
@@ -76,7 +68,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
-		fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
+		log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 		return nil, nil
 	}
 	//tsY_prob and trY_prob for prob tuning
@@ -129,7 +121,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		//	}
 		//}
 	}
-	fmt.Println("step 1: linear code calculated.")
+	log.Print("step 1: linear code calculated.")
 	//cca
 	B := mat64.NewDense(0, 0, nil)
 	if !reg {
@@ -144,7 +136,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		//_, B = ccaProjectTwoMatrix(trXdataB, trYdata)
 		B = ccaProject(trXdataB, trYdata)
 	}
-	fmt.Println("step 2: cca code calculated.")
+	log.Print("step 2: cca code calculated.")
 
 	//CCA code
 	trY_Cdata := mat64.NewDense(0, 0, nil)
@@ -161,7 +153,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
 	}
 	wg.Wait()
-	fmt.Println("step 3: cg decoding finihsed.")
+	log.Print("step 3: cg decoding finihsed.")
 	//decoding and step 4
 	c := 0
 	wg.Add(nK * len(sigmaFctsSet))
@@ -505,14 +497,14 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float
 			gradient = gradientCal(lamda, weights, trFoldX, trFoldY, products)
 			deltaLoss = deltaLossCal(trFoldY, products, lamda, weights, preProducts, preWeights)
 			if step == 0.0 {
-				fmt.Println("early stop at conjugate gradient.")
+				log.Print("early stop at conjugate gradient.")
 				break
 			}
 		}
 		maxDiff = maxDiffCal(products, preProducts, n)
 	}
 	if iter == maxIter {
-		fmt.Println("reached max Iter for conjugate gradient.")
+		log.Print("reached max Iter for conjugate gradient.")
 	}
 	return weights
 }

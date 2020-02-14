@@ -9,10 +9,10 @@ import (
 	"sync"
 )
 
-type kv struct {
-	Key   int
-	Value float64
-}
+//type kv struct {
+//	Key   int
+//	Value float64
+//}
 
 func colNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	n, _ = network.Caps()
@@ -201,7 +201,7 @@ func single_sPriorDataDada(network *mat64.Dense, sPriorData *mat64.Dense, prior 
 func featureAupr(network *mat64.Dense, prior *mat64.Dense, tsY *mat64.Dense, trY *mat64.Dense) (aupr float64, aupr2 float64) {
 	sPrior := propagate(network, 0.6, prior, trY)
 	aupr = computeAuprSkipTr(tsY.ColView(0), sPrior.ColView(0), trY.ColView(0))
-	aupr2, _, _ = ComputeAupr(tsY.ColView(0), sPrior.ColView(0))
+	aupr2, _, _, _ = ComputeAupr(tsY.ColView(0), sPrior.ColView(0), 1.0)
 	return aupr, aupr2
 }
 

@@ -12,8 +12,35 @@ import (
 
 //for cross validation
 type CvFold struct {
-	X *mat64.Dense
-	Y *mat64.Dense
+	X        *mat64.Dense
+	Y        *mat64.Dense
+	IndAccum []int
+}
+
+func HyperParameterSet(maxDim int, lbL float64, hbL float64, nStep int) (kSet []int, sigmaFctsSet []float64, lamdaSet []float64) {
+
+	//sigmaFctsSet := []float64{4.0, 25.0, 100.0, 400.0, 10000.0}
+	sigmaFctsSet = make([]float64, 0)
+	lamdaSet = make([]float64, 0)
+	kSet = make([]int, 0)
+	kMap := make(map[int]int)
+	for i := 5; i <= 95; i += 10 {
+		k := maxDim * i / 100
+		if k > 0 {
+			_, isDefined := kMap[k]
+			if !isDefined {
+				kSet = append(kSet, k)
+			}
+			kMap[k] = k
+		}
+	}
+	step := (hbL - lbL) / float64(nStep)
+	for i := 0; i < nStep; i++ {
+		lamda := lbL + float64(i)*step
+		sigmaFctsSet = append(sigmaFctsSet, 1.0/(lamda*lamda))
+		lamdaSet = append(lamdaSet, lamda)
+	}
+	return kSet, sigmaFctsSet, lamdaSet
 }
 
 func (f *CvFold) setXY(pos []int, neg []int, matX *mat64.Dense, vecY *mat64.Vector) {
@@ -41,7 +68,7 @@ func (f *CvFold) setXYinDecoding(idxArr []int, matX *mat64.Dense, vecY *mat64.Ve
 		f.Y.Set(i, 0, vecY.At(idxArr[i], 0))
 	}
 }
-func (f *CvFold) SetXYinNestedTraining(idxArr []int, matX *mat64.Dense, matY *mat64.Dense) {
+func (f *CvFold) SetXYinNestedTraining(idxArr []int, matX *mat64.Dense, matY *mat64.Dense, indAccum []int) {
 	_, nColX := matX.Caps()
 	_, nColY := matY.Caps()
 	nRow := len(idxArr)
@@ -51,6 +78,7 @@ func (f *CvFold) SetXYinNestedTraining(idxArr []int, matX *mat64.Dense, matY *ma
 		f.X.SetRow(i, matX.RawRowView(idxArr[i]))
 		f.Y.SetRow(i, matY.RawRowView(idxArr[i]))
 	}
+	f.IndAccum = indAccum
 }
 func Shift(pToSlice *[]string) string {
 	sValue := (*pToSlice)[0]
@@ -331,13 +359,15 @@ func computeF1_2(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64) 
 	}
 	return F1
 }
-func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore float64, optThres float64) {
+func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64, pAupr float64, maxFscore float64, optThres float64) {
 	type kv struct {
 		Key   int
 		Value float64
 	}
 	n := Y.Len()
 	mapY := make(map[int]int)
+	sumZero := 0
+	sumOne := 0
 	//skipY := make(map[int]int)
 	var sortYh []kv
 	for i := 0; i < n; i++ {
@@ -350,9 +380,22 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 		ele := Yh.At(i, 0)
 		if math.IsNaN(ele) {
 			sortYh = append(sortYh, kv{i, 0.0})
+			sumZero += 1
 		} else {
-			sortYh = append(sortYh, kv{i, Yh.At(i, 0)})
+			ele := Yh.At(i, 0)
+			sortYh = append(sortYh, kv{i, ele})
+			if ele >= 1.0 {
+				sumOne += 1
+			} else if ele == 0.0 {
+				sumZero += 1
+			}
 		}
+	}
+
+	//the all zero/one slice won't be sorted by default, resulting aartifact Aupr that can be large
+	nCaseThres := int(float64(n) * 0.8)
+	if sumOne > nCaseThres || sumZero > nCaseThres {
+		return 0.0, 0.0, 0.0, 0.0
 	}
 	sort.Slice(sortYh, func(i, j int) bool {
 		return sortYh[i].Value > sortYh[j].Value
@@ -361,17 +404,21 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 	all := 0.0
 	p := 0.0
 	tp := 0.0
+	k := 0.0
 	maxFscore = 0.0
 	optThres = 0.0
-	//maxThres := sortYh[0].Value
+	isFirstPositiveDetected := false
+	isThresDetermined := false
 	total := float64(len(mapY))
 	prData := make([]float64, 0)
 	for _, kv := range sortYh {
-		//fmt.Println(kv.Key, kv.Value)
 		//_, ok2 := skipY[kv.Key]
 		//if ok2 {
 		//continue
 		//}
+		if isFirstPositiveDetected {
+			k += 1
+		}
 		all += 1.0
 		p += 1.0
 		_, ok := mapY[kv.Key]
@@ -380,42 +427,41 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector) (aupr float64, maxFscore flo
 			pr := tp / p
 			re := tp / total
 			//update Fscore and thres
-			fscore := 2 * pr * re / (pr + re)
+			//fscore := 2 * pr * re / (pr + re)
+			fscore := (1 + beta*beta) * pr * re / (beta*beta*pr + re)
 			//fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
-			//fscore := 5.0 * tp / (p + 4.0*total)
-			//fscore := 10.0 * tp / (p + 9.0*total)
-			//fscore := 10.0 * tp / (p + 9.0*total)
-			//fscore := 4.0 * tp / (p + 3.0*total)
-			//fscore := 2.4 * tp / (p + 1.4*total)
-			//fscore := 2 * tp / (p + 1*total)
-			if fscore > maxFscore {
+			if !isFirstPositiveDetected {
+				isFirstPositiveDetected = true
 				maxFscore = fscore
 				optThres = kv.Value
-				//optThres = fscore / 2
-				//optThres = (3*tp+fn+1)/(tp+fn+fp+1)
-				//optThres = (2*tp + total+1) / (total + p - tp + 1)
-				//optThres = (3*tp*(total-tp) + tp) / (total + tp + p - tp + 1)
-				//optThres = (3*tp*(total-tp) + tp) / (total + tp + p - tp + float64(n))
-				//optThres = (3*tp*(total-tp) + tp) / (total + tp + p - tp + 1)
-				//optThres = (3*tp*(total-tp) + 4*tp) / (total + 4*tp + p - tp + float64(n))
+			}
+			kThres := (total - tp) / tp * (beta*beta*total + all - tp)
+			if k >= kThres {
+				isThresDetermined = true
+			}
+			if fscore > maxFscore && !isThresDetermined {
+				k = 0.0
+				maxFscore = fscore
+				optThres = kv.Value
 			}
 			prData = append(prData, pr)
 			prData = append(prData, re)
 		}
 	}
 	aupr = 0.0
+	pAupr = 0.0
 	for i := 2; i < len(prData)-1; i += 2 {
-		//fmt.Println("AUPR:", aupr, prData[i-2], prData[i], prData[i+1], prData[i-1])
 		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
+		if i < len(prData)/2 {
+			pAupr = aupr
+		}
 	}
 	aupr = aupr / 2
-	if optThres < 0.5 {
-		optThres = 0.5
-	}
+	pAupr = pAupr / 2
 	if aupr < float64(len(mapY))/float64(n) {
-		return aupr, maxFscore, math.Inf(0)
+		return aupr, pAupr, maxFscore, math.Inf(0)
 	}
-	return aupr, maxFscore, optThres
+	return aupr, pAupr, maxFscore, optThres
 }
 
 func computeAuprSkipTr(Y *mat64.Vector, Yh *mat64.Vector, Ys *mat64.Vector) (aupr float64) {
@@ -578,13 +624,13 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 			//if ele < min {
 			//	min = ele
 			//}
+			//}
+			//ave := sum / float64(nRow)
+			//for i := 0; i < nRow; i++ {
+			//	raw := tsYhat2.At(i, j)
+			//	ele := (raw - min) / (max - min)
+			tsYhat2.Set(i, j, ele)
 		}
-		//ave := sum / float64(nRow)
-		//for i := 0; i < nRow; i++ {
-		//	raw := tsYhat2.At(i, j)
-		//	ele := (raw - min) / (max - min)
-		//	tsYhat2.Set(i, j, ele)
-		//}
 		//thresData2.Set(0, j, (0.0-min)/(max-min))
 		thresData2.Set(0, j, 0.0)
 	}
@@ -722,7 +768,9 @@ func TopKprec(tsYdata *mat64.Dense, Yhat *mat64.Dense, k int) (kPrec float64) {
 		Value float64
 	}
 	nRow, nCol := tsYdata.Caps()
-	nPos := 0.0
+	colSum := mat64.NewDense(1, nCol, nil)
+	colCount := mat64.NewDense(1, nCol, nil)
+	//nPos := 0.0
 	for j := 0; j < nCol; j++ {
 		//thres for top k
 		var sortYh []kv
@@ -742,12 +790,21 @@ func TopKprec(tsYdata *mat64.Dense, Yhat *mat64.Dense, k int) (kPrec float64) {
 		for i := 0; i < nRow; i++ {
 			ele := Yhat.At(i, j)
 			//using > as golang start index at 0
+			if tsYdata.At(i, j) == 1.0 {
+				colSum.Set(0, j, colSum.At(0, j)+1.0)
+			}
 			if ele > thres && tsYdata.At(i, j) == 1.0 {
-				nPos += 1.0
+				colCount.Set(0, j, colCount.At(0, j)+1.0)
+				//nPos += 1.0
 			}
 		}
 	}
-	kPrec = nPos / float64(k) / float64(nCol)
+
+	kPrec = 0.0
+	for j := 0; j < nCol; j++ {
+		kPrec += float64(nCol) * colCount.At(0, j) / colSum.At(0, j) / float64(k)
+	}
+	//kPrec = nPos / float64(k) / float64(nCol)
 	return kPrec
 }
 
@@ -760,13 +817,13 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	sumFn := 0
 	sumTn := 0
 	for i := 0; i < nLabel; i++ {
-		aupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		aupr, _, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1.0)
 		sumAupr += aupr
 	}
 	//y-flat and microAupr
 	tsYdataVec := Flat(tsYdata)
 	tsYhatVec := Flat(tsYhat)
-	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
+	microAupr, _, _, _ = ComputeAupr(tsYdataVec, tsYhatVec, 1.0)
 
 	//bin with rankCut
 	tsYhat, _ = BinPredByAlpha(tsYhat, rankCut, true)
@@ -788,7 +845,7 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 }
 
 //func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
-func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64, kPrec float64) {
+func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64, kPrec float64, firstAupr float64) {
 	//F1 score
 	_, nLabel := tsYdata.Caps()
 	sumAupr := 0.0
@@ -808,7 +865,10 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	//tsYhat = RescaleData(tsYhat, thresData)
 	//macroAupr
 	for i := 0; i < nLabel; i++ {
-		aupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		aupr, pAupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1.0)
+		if i == 0 {
+			firstAupr = pAupr
+		}
 		macroAuprSet = append(macroAuprSet, aupr)
 		sumAupr += aupr
 	}
@@ -817,13 +877,13 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	kPrec = TopKprec(tsYdata, tsYhat, 10)
 	//accuracy
 	//tmp, one thing at a time
-	tsYhat, thresData = SoftThresScale(tsYhat, thresData)
+	//tsYhat, thresData = SoftThresScale(tsYhat, thresData)
 	tsYhatAccuracy, detectNanInf := BinPredByAlpha(tsYhat, 1, true)
 	accuracy = ComputeAccuracy(tsYdata, tsYhatAccuracy, false)
 	//y-flat and microAupr
 	tsYdataVec := Flat(tsYdata)
 	tsYhatVec := Flat(tsYhat)
-	microAupr, _, _ = ComputeAupr(tsYdataVec, tsYhatVec)
+	microAupr, _, _, _ = ComputeAupr(tsYdataVec, tsYhatVec, 1.0)
 	//microF1
 	//tsYhat = MaskZeroByThres(tsYhat, thresData)
 	//tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, false)
@@ -855,10 +915,10 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 		}
 	}
 	if detectNanInf {
-		return 0.0, 0.0, 0.0, 0.0, 0.0
-	} else {
-		return accuracy, microF1, microAupr, macroAupr, kPrec
+		//fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, kPrec)
+		//return 0.0, 0.0, 0.0, 0.0, 0.0
 	}
+	return accuracy, microF1, microAupr, macroAupr, kPrec, firstAupr
 }
 
 func RescaleData(data *mat64.Dense, thresData *mat64.Dense) (scaleData *mat64.Dense) {
@@ -908,12 +968,12 @@ func Zscore(data *mat64.Dense) (scaleData *mat64.Dense) {
 	return scaleData
 }
 
-func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (thres *mat64.Dense) {
+func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, beta float64) (thres *mat64.Dense) {
 	_, nCol := tsYdata.Caps()
 	thres = mat64.NewDense(1, nCol, nil)
 	//tsYhat2 := Zscore(tsYhat)
 	for i := 0; i < nCol; i++ {
-		_, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i))
+		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta)
 		thres.Set(0, i, optThres)
 	}
 	return thres
@@ -952,39 +1012,140 @@ func AveThres(cBest int, thresSet *mat64.Dense, plattCountSet *mat64.Dense) (ave
 	return aveThres
 }
 
-func AccumTsYdata(c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY *mat64.Dense, YhPlattSet map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense) {
+func RefillIndCol(tsX *mat64.Dense, ind []int) (tsX2 *mat64.Dense) {
+	isNeedRefill := false
+	nAddCol := 0
+	for i := 0; i < len(ind); i++ {
+		if ind[i] <= 1 {
+			isNeedRefill = true
+			nAddCol += 1
+		}
+	}
+
+	if isNeedRefill {
+		nRow, nCol := tsX.Caps()
+		nCol += nAddCol
+		tsX2 = mat64.NewDense(nRow, nCol, nil)
+		tickCol := 0
+		for j := 0; j < nCol; j++ {
+			if ind[tickCol] > 1 {
+				for i := 0; i < nRow; i++ {
+					tsX2.Set(i, j, tsX.At(i, tickCol))
+				}
+				tickCol += 1
+			} else {
+				// do nothing
+			}
+		}
+		return tsX2
+	} else {
+		return tsX
+	}
+}
+
+func AccumTsYdata(iFold int, c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY *mat64.Dense, tsX *mat64.Dense, indAccum []int, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, rawThres *mat64.Dense) {
 	nCol := colSum.Len()
+	//_, nColX := tsX.Caps()
 	nRow, _ := tsYh.Caps()
 	tsYh2 := mat64.NewDense(nRow, nCol, nil)
+	//tsX can be modified as AccumTsYdata is after EcocRun
+	tsX = RefillIndCol(tsX, indAccum)
+	//empty as it will be filled in YhPlattSetUpdate
+	tsYhCalib2 := mat64.NewDense(nRow, nCol, nil)
 	tsY2 := mat64.NewDense(nRow, nCol, nil)
-
+	//tsX2 := mat64.NewDense(nRow, nColX, nil)
+	predY2 := mat64.NewDense(nRow, nCol, nil)
+	//fold marker
+	iFoldmat2 := mat64.NewDense(nRow, 1, nil)
+	for i := 0; i < nRow; i++ {
+		iFoldmat2.Set(i, 0, float64(iFold))
+	}
+	//tsYh, tsY, and predY
 	tC := 0
 	for j := 0; j < nCol; j++ {
 		if colSum.At(j, 0) == 1.0 {
 			for i := 0; i < nRow; i++ {
 				tsYh2.Set(i, j, tsYh.At(i, tC))
 				tsY2.Set(i, j, tsY.At(i, tC))
+				if tsYh2.At(i, j) > rawThres.At(0, j) {
+					predY2.Set(i, j, 1.0)
+				}
 			}
 			tC += 1
 		} else {
 			for i := 0; i < nRow; i++ {
 				tsYh2.Set(i, j, -1.0)
 				tsY2.Set(i, j, -1.0)
+				predY2.Set(i, j, -1.0)
 			}
 		}
 	}
+	//tsX
+	//for j := 0; j < nColX; j++ {
+	//	for i := 0; i < nRow; i++ {
+	//		tsX2.Set(i, j, tsX.At(i, j))
+	//	}
+	//}
+
 	//whether the matrix is defined previously
 	Yh, isYh := YhPlattSet[c]
+	YhCalib, isYh := YhPlattSetCalibrated[c]
 	Y, _ := yPlattSet[c]
+	X, _ := xSet[c]
+	//if isX {
+	//	a, b := X.Caps()
+	//	d, e := tsX.Caps()
+	//	fmt.Println("X: ", iFold, c, a, b)
+	//	fmt.Println("tsX: ", d, e)
+	//}
+	iFoldmat := iFoldMarker[c]
+	predY := yPredSet[c]
 	if !isYh {
 		YhPlattSet[c] = tsYh2
+		YhPlattSetCalibrated[c] = tsYhCalib2
 		yPlattSet[c] = tsY2
+		xSet[c] = tsX
+		iFoldMarker[c] = iFoldmat2
+		yPredSet[c] = predY2
 	} else {
 		newYh := mat64.NewDense(0, 0, nil)
+		newYhCalib := mat64.NewDense(0, 0, nil)
 		newY := mat64.NewDense(0, 0, nil)
+		newX := mat64.NewDense(0, 0, nil)
+		newIfoldmat := mat64.NewDense(0, 0, nil)
+		newPredY := mat64.NewDense(0, 0, nil)
+
 		newYh.Stack(Yh, tsYh2)
+		newYhCalib.Stack(YhCalib, tsYhCalib2)
 		newY.Stack(Y, tsY2)
+		newX.Stack(X, tsX)
+		newIfoldmat.Stack(iFoldmat, iFoldmat2)
+		newPredY.Stack(predY, predY2)
+
 		YhPlattSet[c] = newYh
+		YhPlattSetCalibrated[c] = newYhCalib
 		yPlattSet[c] = newY
+		xSet[c] = newX
+		iFoldMarker[c] = newIfoldmat
+		yPredSet[c] = newPredY
 	}
+}
+
+func BestHyperParameterSetByMeasure(trainMeasure *mat64.Dense, index int) (cBest int, value float64) {
+	var sortMap []kv
+	n, _ := trainMeasure.Caps()
+	//best before kNN calibration
+	for i := 0; i < n; i++ {
+		if math.IsNaN(trainMeasure.At(i, index)) {
+			sortMap = append(sortMap, kv{i, 0.0})
+		} else {
+			sortMap = append(sortMap, kv{i, trainMeasure.At(i, index)})
+		}
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value > sortMap[j].Value
+	})
+	cBest = sortMap[0].Key
+	value = sortMap[0].Value
+	return cBest, value
 }
