@@ -393,10 +393,10 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 	}
 
 	//the all zero/one slice won't be sorted by default, resulting aartifact Aupr that can be large
-	nCaseThres := int(float64(n) * 0.8)
-	if sumOne > nCaseThres || sumZero > nCaseThres {
-		return 0.0, 0.0, 0.0, 0.0
-	}
+	//nCaseThres := int(float64(n) * 0.8)
+	//if sumOne > nCaseThres || sumZero > nCaseThres {
+	//	return 0.0, 0.0, 0.0, math.Inf(0)
+	//}
 	sort.Slice(sortYh, func(i, j int) bool {
 		return sortYh[i].Value > sortYh[j].Value
 	})
@@ -411,6 +411,7 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 	isThresDetermined := false
 	total := float64(len(mapY))
 	prData := make([]float64, 0)
+	prDataPartial := make([]float64, 0)
 	for _, kv := range sortYh {
 		//_, ok2 := skipY[kv.Key]
 		//if ok2 {
@@ -446,15 +447,19 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 			}
 			prData = append(prData, pr)
 			prData = append(prData, re)
+			if p < float64(n/2) {
+				prDataPartial = append(prData, pr)
+				prDataPartial = append(prData, re)
+			}
 		}
 	}
 	aupr = 0.0
 	pAupr = 0.0
 	for i := 2; i < len(prData)-1; i += 2 {
 		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
-		if i < len(prData)/2 {
-			pAupr = aupr
-		}
+	}
+	for i := 2; i < len(prDataPartial)-1; i += 2 {
+		pAupr += (prDataPartial[i] + prDataPartial[i-2]) * (prDataPartial[i+1] - prDataPartial[i-1])
 	}
 	aupr = aupr / 2
 	pAupr = pAupr / 2
@@ -536,11 +541,55 @@ func Flat(Y *mat64.Dense) (vec *mat64.Vector) {
 	}
 	return vec
 }
-func BinPredByAlpha(Yh *mat64.Dense, rankCut int, outBin bool) (binYh *mat64.Dense, detectNanInf bool) {
-	type kv struct {
-		Key   int
-		Value float64
+
+func RankPred(Yh *mat64.Dense, thres *mat64.Dense) (rankYh *mat64.Dense, rankThres *mat64.Dense) {
+	nRow, nCol := Yh.Caps()
+	rankYh = mat64.NewDense(nRow, nCol, nil)
+	rankThres = mat64.NewDense(1, nCol, nil)
+	for c := 0; c < nCol; c++ {
+		var sortYh []kv
+		for r := 0; r < nRow; r++ {
+			ele := Yh.At(r, c)
+			if math.IsNaN(ele) {
+				sortYh = append(sortYh, kv{r, 0.0})
+			} else {
+				sortYh = append(sortYh, kv{r, ele})
+			}
+
+		}
+		sort.Slice(sortYh, func(i, j int) bool {
+			return sortYh[i].Value > sortYh[j].Value
+		})
+		rankThres.Set(0, c, 1.0)
+		for r := 0; r < nRow; r++ {
+			value := (float64(nRow) - float64(r)) / float64(nRow)
+			//largest rank in values abrove thres
+			if rankThres.At(0, c) > value && thres.At(0, c) < sortYh[r].Value {
+				rankThres.Set(0, c, value)
+			}
+		}
+		for r := 0; r < nRow; r++ {
+			value := (float64(nRow) - float64(r)) / float64(nRow)
+			if rankThres.At(0, c) >= 1.0 {
+				rankYh.Set(sortYh[r].Key, c, -1.0)
+
+			} else if value < rankThres.At(0, c) {
+				rankYh.Set(sortYh[r].Key, c, -1.0)
+				//rankYh.Set(sortYh[r].Key, c, (value-rankThres.At(0, c))/(1.0-rankThres.At(0, c)))
+				//rankYh.Set(sortYh[r].Key, c, (value-rankThres.At(0, c))/(1-rankThres.At(0, c)))
+				//rankYh.Set(sortYh[r].Key, c, (value-0.5)/(0.5))
+			} else {
+				//rankYh.Set(sortYh[r].Key, c, value)
+				rankYh.Set(sortYh[r].Key, c, (value-rankThres.At(0, c))/(1.0-rankThres.At(0, c)))
+			}
+
+		}
+		rankThres.Set(0, c, 0.0)
+
 	}
+	return rankYh, rankThres
+}
+func BinPredByAlpha(Yh *mat64.Dense, rankCut int, outBin bool) (binYh *mat64.Dense, detectNanInf bool) {
 	detectNanInf = false
 	nRow, nCol := Yh.Caps()
 	binYh = mat64.NewDense(nRow, nCol, nil)
@@ -564,19 +613,27 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int, outBin bool) (binYh *mat64.Den
 		if thres < 0.0 {
 			thres = 0.0
 		}
+		//tied top rank as 1
+		if rankCut == 1 && sortYh[rankCut].Value == sortYh[0].Value {
+			thres -= 0.000001
+			//fmt.Println(r, sortYh[rankCut].Value, sortYh[0].Value, Yh.At(r, 0))
+		}
 		for c := 0; c < nCol; c++ {
+			tick := 0
 			ele := Yh.At(r, c)
 			if math.IsNaN(ele) {
 				binYh.Set(r, c, 0.0)
 				if !detectNanInf {
 					detectNanInf = true
 				}
-			} else if Yh.At(r, c) > thres {
+			} else if Yh.At(r, c) > thres && tick < rankCut {
 				if outBin {
 					binYh.Set(r, c, 1.0)
+					//fmt.Println("mark", r, c, Yh.At(r, c))
 				} else {
 					binYh.Set(r, c, (Yh.At(r, c)))
 				}
+				tick += 1
 			} else {
 				binYh.Set(r, c, 0.0)
 			}
@@ -608,31 +665,73 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 	for j := 0; j < nCol; j++ {
 		//max := 0.0
 		//min := 0.0
+		ele := 0.0
+		//mm := 0.0
+		//var sortYh []kv
 		for i := 0; i < nRow; i++ {
-			ele := 0.0
 			if math.IsInf(thresData.At(0, j), 0) {
-				ele = -1.0
+				ele = 0.0
+			} else if thresData.At(0, j) == 1.0 {
+				ele = 0.0
 			} else {
-				ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / math.Exp(tsYhat.At(i, j))
-				//ele := (Sigmoid(tsYhat.At(i, j)) - Sigmoid(thresData.At(0, j))) / Sigmoid(tsYhat.At(i, j))
+				//ele = Sigmoid(tsYhat.At(i, j))
+				//ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / (math.Exp(1) - math.Exp(thresData.At(0, j)))
+				ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / (math.Exp(1) - math.Exp(thresData.At(0, j)))
+				//ele = (tsYhat.At(i, j) - thresData.At(0, j)) / (1 - thresData.At(0, j))
+				//ele = (Sigmoid(tsYhat.At(i, j)) - Sigmoid(thresData.At(0, j)))
 				//ele := (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / math.Exp(thresData.At(0, j))
 			}
 			//sum += ele
+			//sortYh = append(sortYh, kv{i, ele})
 			//if ele > max {
 			//	max = ele
 			//}
 			//if ele < min {
 			//	min = ele
 			//}
-			//}
-			//ave := sum / float64(nRow)
-			//for i := 0; i < nRow; i++ {
-			//	raw := tsYhat2.At(i, j)
-			//	ele := (raw - min) / (max - min)
 			tsYhat2.Set(i, j, ele)
 		}
+		//sigmoidThres := Sigmoid(thresData.At(0, j))
+		//if max <= 0 {
+		//	for i := 0; i < nRow; i++ {
+		//		ele = (Sigmoid(tsYhat.At(i, j)) - Sigmoid(thresData.At(0, j)))
+		//		raw := 0 - (ele-min)/(max-min)
+		//		tsYhat2.Set(i, j, raw)
+		//	}
+
+		//} else {
+		//ave := sum / float64(nRow)
+		//	for i := 0; i < nRow; i++ {
+		//		ele = (Sigmoid(tsYhat.At(i, j)) - Sigmoid(thresData.At(0, j)))
+		//		raw := (ele - min) / (max - min)
+		//		tsYhat2.Set(i, j, raw)
+		//	}
+		//}
+		//sort.Slice(sortYh, func(i, j int) bool {
+		//	return sortYh[i].Value > sortYh[j].Value
+		//})
+		//min = sortYh[int(0.99*float64(nRow))].Value
+		//if thresData.At(0, j) > max {
+		//	max = thresData.At(0, j)
+		//}
+		//mm = max - min
+		//for i := 0; i < nRow; i++ {
+		//	if math.IsInf(thresData.At(0, j), 0) {
+		//		ele = -1.0
+		//	} else {
+		//		ele = tsYhat.At(i, j)
+		//	}
+
+		//}
+		//ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / math.Exp(tsYhat.At(i, j))
 		//thresData2.Set(0, j, (0.0-min)/(max-min))
-		thresData2.Set(0, j, 0.0)
+		//thresData2.Set(0, j, (thresData.At(0, j)-min)/mm)
+		//if thresData.At(0, j) < max {
+		//	thresData2.Set(0, j, 0.5)
+		//} else {
+		thresData2.Set(0, j, 0)
+		//thresData2.Set(0, j, sigmoidThres)
+		//}
 	}
 	return tsYhat2, thresData2
 	//return tsYhat2
@@ -640,8 +739,7 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 }
 
 func Sigmoid(x float64) (y float64) {
-	y = (math.Exp(x) - math.Exp(-x)) / (math.Exp(x) + math.Exp(-x))
-	//y = x / (1 + math.Abs(x))
+	y = math.Exp(x) / (1 + math.Exp(x))
 	return y
 }
 
@@ -678,13 +776,13 @@ func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64, 
 		yh := Yh.At(i, 0)
 		//_, exist := skipY[i]
 		//if !exist {
-		if y > 0 && yh >= thres {
+		if y > 0 && yh > thres {
 			tp += 1
-		} else if y <= 0 && yh >= thres {
+		} else if y <= 0 && yh > thres {
 			fp += 1
-		} else if y > 0 && yh < thres {
+		} else if y > 0 && yh <= thres {
 			fn += 1
-		} else if y <= 0 && yh < thres {
+		} else if y <= 0 && yh <= thres {
 			tn += 1
 		}
 		//}
@@ -713,7 +811,7 @@ func ComputeF1_3(Y *mat64.Vector, Yh *mat64.Vector, thres float64) (F1 float64, 
 func ComputeAccuracy(tsYdata *mat64.Dense, Yhat *mat64.Dense, isWeighted bool) (accuracy float64) {
 	nRow, nCol := tsYdata.Caps()
 	colSum := mat64.NewDense(1, nCol, nil)
-	//matching benchmark for no all neg set
+	//matching benchmark for no pos but all neg row
 	rowSum := mat64.NewDense(1, nRow, nil)
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nCol; j++ {
@@ -759,6 +857,9 @@ func ComputeAccuracy(tsYdata *mat64.Dense, Yhat *mat64.Dense, isWeighted bool) (
 	if !isWeighted {
 		accuracy = count / nPosRow
 	}
+	if accuracy > 1.0 {
+		accuracy = 1.0
+	}
 	return accuracy
 }
 
@@ -793,8 +894,10 @@ func TopKprec(tsYdata *mat64.Dense, Yhat *mat64.Dense, k int) (kPrec float64) {
 			if tsYdata.At(i, j) == 1.0 {
 				colSum.Set(0, j, colSum.At(0, j)+1.0)
 			}
-			if ele > thres && tsYdata.At(i, j) == 1.0 {
+			//k > 0 dealing with equally top ranked instance
+			if ele > thres && tsYdata.At(i, j) == 1.0 && k > 0 {
 				colCount.Set(0, j, colCount.At(0, j)+1.0)
+				k -= 1
 				//nPos += 1.0
 			}
 		}
@@ -802,7 +905,7 @@ func TopKprec(tsYdata *mat64.Dense, Yhat *mat64.Dense, k int) (kPrec float64) {
 
 	kPrec = 0.0
 	for j := 0; j < nCol; j++ {
-		kPrec += float64(nCol) * colCount.At(0, j) / colSum.At(0, j) / float64(k)
+		kPrec += float64(nCol) * colCount.At(0, j) / (colSum.At(0, j) * float64(k))
 	}
 	//kPrec = nPos / float64(k) / float64(nCol)
 	return kPrec
@@ -865,9 +968,9 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	//tsYhat = RescaleData(tsYhat, thresData)
 	//macroAupr
 	for i := 0; i < nLabel; i++ {
-		aupr, pAupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1.0)
+		aupr, _, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1.0)
 		if i == 0 {
-			firstAupr = pAupr
+			firstAupr = aupr
 		}
 		macroAuprSet = append(macroAuprSet, aupr)
 		sumAupr += aupr
@@ -877,6 +980,8 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	kPrec = TopKprec(tsYdata, tsYhat, 10)
 	//accuracy
 	//tmp, one thing at a time
+	//tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
+	tsYhat = MaskZeroByThres(tsYhat, thresData)
 	//tsYhat, thresData = SoftThresScale(tsYhat, thresData)
 	tsYhatAccuracy, detectNanInf := BinPredByAlpha(tsYhat, 1, true)
 	accuracy = ComputeAccuracy(tsYdata, tsYhatAccuracy, false)
@@ -884,14 +989,14 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	tsYdataVec := Flat(tsYdata)
 	tsYhatVec := Flat(tsYhat)
 	microAupr, _, _, _ = ComputeAupr(tsYdataVec, tsYhatVec, 1.0)
+	tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, true)
+	//tsYhat, thresData = RankPred(tsYhat, thresData)
 	//microF1
-	//tsYhat = MaskZeroByThres(tsYhat, thresData)
-	//tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, false)
 	for i := 0; i < nLabel; i++ {
 		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
-		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
+		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 0.99)
 		//fmt.Println(thresData.At(0, i))
-		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
+		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
 		if isVerbose {
 			tpSet = append(tpSet, tp)
 			fpSet = append(fpSet, fp)
@@ -911,12 +1016,12 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	if isVerbose {
 		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "label", "tp", "fp", "fn", "tn", "F1", "AUPR")
 		for i := 0; i < nLabel; i++ {
-			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i])
+			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i], thresData.At(0, i))
 		}
 	}
 	if detectNanInf {
-		//fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, kPrec)
-		//return 0.0, 0.0, 0.0, 0.0, 0.0
+		fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, kPrec)
+		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 	}
 	return accuracy, microF1, microAupr, macroAupr, kPrec, firstAupr
 }
@@ -957,24 +1062,67 @@ func Zscore(data *mat64.Dense) (scaleData *mat64.Dense) {
 	scaleData = mat64.NewDense(nRow, nCol, nil)
 	for j := 0; j < nCol; j++ {
 		colData := make([]float64, nRow)
+		max := -9999999999.9
+		min := 9999999999.9
 		for i := 0; i < nRow; i++ {
 			colData[i] = data.At(i, j)
+			if max < colData[i] {
+				max = colData[i]
+			}
+			if min > colData[i] {
+				min = colData[i]
+			}
 		}
 		mean, sd := stat.MeanStdDev(colData, nil)
+		max = stat.StdScore(max, mean, sd)
+		min = stat.StdScore(min, mean, sd)
 		for i := 0; i < nRow; i++ {
-			scaleData.Set(i, j, stat.StdScore(data.At(i, j), mean, sd)/5+0.5)
+			value := stat.StdScore(data.At(i, j), mean, sd)
+			//scaleData.Set(i, j, stat.StdScore(data.At(i, j), mean, sd)/5+0.5)
+			scaleData.Set(i, j, (value-min)/(max-min))
 		}
 	}
 	return scaleData
 }
 
-func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, beta float64) (thres *mat64.Dense) {
+func SigmoidMatrix(data *mat64.Dense) (scaleData *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	scaleData = mat64.NewDense(nRow, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		for i := 0; i < nRow; i++ {
+			scaleData.Set(i, j, (Sigmoid(data.At(i, j)-0.5) / 0.5))
+		}
+	}
+	return scaleData
+}
+func EleCopy(data *mat64.Dense) (data2 *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	data2 = mat64.NewDense(nRow, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		for i := 0; i < nRow; i++ {
+			data2.Set(i, j, data.At(i, j))
+		}
+	}
+	return data2
+}
+
+func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, beta float64, isParAuprThres bool) (thres *mat64.Dense) {
 	_, nCol := tsYdata.Caps()
 	thres = mat64.NewDense(1, nCol, nil)
 	//tsYhat2 := Zscore(tsYhat)
 	for i := 0; i < nCol; i++ {
-		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta)
-		thres.Set(0, i, optThres)
+		aupr, pAupr, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta)
+		beta = 2 * aupr
+		_, _, _, optThres = ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta)
+		if isParAuprThres {
+			if pAupr > 0.1 {
+				thres.Set(0, i, optThres)
+			} else {
+				thres.Set(0, i, 1.0)
+			}
+		} else {
+			thres.Set(0, i, optThres)
+		}
 	}
 	return thres
 }

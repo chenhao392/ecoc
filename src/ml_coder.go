@@ -59,7 +59,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
 	//SOIS stratification
-	folds := SOIS(trYdata, nFold, false)
+	folds := SOIS(trYdata, nFold, 10, false)
 	//vars
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
@@ -616,7 +616,11 @@ func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat6
 	//return
 	tsYhatData = make([]float64, 0)
 	for i := 0; i < nLabel; i++ {
-		tsYhatData = append(tsYhatData, Q.At(0, i))
+		if math.IsNaN(Q.At(0, i)) {
+			tsYhatData = append(tsYhatData, 0.0)
+		} else {
+			tsYhatData = append(tsYhatData, Q.At(0, i))
+		}
 	}
 	return tsYhatData
 }

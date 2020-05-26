@@ -136,12 +136,16 @@ Sample usages:
 			if !isAddPrior {
 				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
 				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+				//trXdata, _ = src.QuantileNorm(trXdata, mat64.NewDense(0, 0, nil), false)
+				//tsXdata, _ = src.QuantileNorm(tsXdata, mat64.NewDense(0, 0, nil), false)
 				indAccum = append(indAccum, ind...)
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
 					sPriorData, ind := src.PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
 					tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+					//trXdata, _ = src.QuantileNorm(trXdata, mat64.NewDense(0, 0, nil), false)
+					//tsXdata, _ = src.QuantileNorm(tsXdata, mat64.NewDense(0, 0, nil), false)
 					indAccum = append(indAccum, ind...)
 				}
 			}
@@ -154,11 +158,11 @@ Sample usages:
 			log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
-		kSet, sigmaFctsSet, _ := src.HyperParameterSet(nLabel, 0.1, 0.5, 4)
-		_, sigmaFctsSet2, _ := src.HyperParameterSet(nLabel, 0.025, 0.1, 3)
-		sigmaFctsSet = append(sigmaFctsSet2, sigmaFctsSet...)
+		kSet, sigmaFctsSet, _ := src.HyperParameterSet(nLabel, 0.025, 0.225, 8)
+		//_, sigmaFctsSet2, _ := src.HyperParameterSet(nLabel, 0.005, 0.025, 4)
+		//sigmaFctsSet = append(sigmaFctsSet2, sigmaFctsSet...)
 		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold, true)
+		folds := src.SOIS(trYdata, nFold, 10, true)
 		//os.Exit(0)
 		//idxPerm := rand.Perm(nTr)
 		trainFold := make([]src.CvFold, nFold)
@@ -266,7 +270,8 @@ Sample usages:
 					}
 				}
 			}
-
+			//qn training trX
+			//trXdataCV, _ = src.QuantileNorm(trXdataCV, mat64.NewDense(0, 0, nil), false)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}
@@ -276,6 +281,10 @@ Sample usages:
 		//potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
 		//nK
+		//type kv struct {
+		//	Key   int
+		//	Value float64
+		//}
 		nK := 0
 		for k := 0; k < len(kSet); k++ {
 			if kSet[k] < minDims {
@@ -286,7 +295,6 @@ Sample usages:
 		nL := nK * len(sigmaFctsSet)
 		trainMeasure := mat64.NewDense(nL, 15, nil)
 		testMeasure := mat64.NewDense(1, 7, nil)
-
 		//traing data per hyperparameter
 		YhPlattSet := make(map[int]*mat64.Dense)
 		YhPlattSetCalibrated := make(map[int]*mat64.Dense)
@@ -294,6 +302,9 @@ Sample usages:
 		yPredSet := make(map[int]*mat64.Dense)
 		iFoldMarker := make(map[int]*mat64.Dense)
 		xSet := make(map[int]*mat64.Dense)
+		plattRobustMeasure := make(map[int]*mat64.Dense)
+		plattRobustLamda := []float64{0.0, 0.04, 0.08, 0.12, 0.16, 0.2}
+
 		//thresSet := mat64.NewDense(nL, nLabel, nil)
 
 		for i := 0; i < nFold; i++ {
@@ -304,10 +315,41 @@ Sample usages:
 			//accum calculated training data
 			for m := 0; m < nK; m++ {
 				for n := 0; n < len(sigmaFctsSet); n++ {
-					tsYhat := src.Zscore(YhSet[c])
-					tsYhat, _ = src.Platt(tsYhat, tsYfold, tsYhat)
+					//tsYhat := src.SigmoidMatrix(YhSet[c])
+					//tsYhat := src.Zscore(YhSet[c])
+					tsYhat, _ := src.QuantileNorm(YhSet[c], mat64.NewDense(0, 0, nil), false)
+					//tsYhat := src.EleCopy(YhSet[c
+					_, nCol := tsYhat.Caps()
+					minMSElamda := make([]float64, nCol)
+					minMSE := make([]float64, nCol)
+					_, isDefinedMSE := plattRobustMeasure[c]
+					if !isDefinedMSE {
+						plattRobustMeasure[c] = mat64.NewDense(len(plattRobustLamda), nCol, nil)
+					}
+					for p := 0; p < len(plattRobustLamda); p++ {
+						tmpLamda := make([]float64, 0)
+						for q := 0; q < nCol; q++ {
+							tmpLamda = append(tmpLamda, plattRobustLamda[p])
+						}
+						_, _, mseArr := src.Platt(tsYhat, tsYfold, tsYhat, tmpLamda)
+						for q := 0; q < nCol; q++ {
+							plattRobustMeasure[c].Set(p, q, plattRobustMeasure[c].At(p, q)+mseArr[q])
+							if p == 0 {
+								minMSE[q] = mseArr[q]
+								minMSElamda[q] = plattRobustLamda[p]
+							} else {
+								if mseArr[q] < minMSE[q] {
+									minMSE[q] = mseArr[q]
+									minMSElamda[q] = plattRobustLamda[p]
+								}
+							}
+						}
+					}
+
+					tsYhat, _, _ = src.Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
 					//raw thres added
-					rawThres := src.FscoreThres(tsYfold, tsYhat, fBetaThres)
+					rawThres := src.FscoreThres(tsYfold, tsYhat, fBetaThres, true)
+					tsYhat, rawThres = src.QuantileNorm(tsYhat, rawThres, true)
 					//accum to add information for KNN calibaration
 					src.AccumTsYdata(i, c, colSum, YhSet[c], tsYfold, testFold[i].X, testFold[i].IndAccum, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, rawThres)
 					c += 1
@@ -324,10 +366,29 @@ Sample usages:
 					trainMeasure.Set(c, 2, trainMeasure.At(c, 2)+1.0)
 					yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold := src.SubSetTrain(i, yPlattSet[c], YhPlattSet[c], yPredSet[c], xSet[c], iFoldMarker[c])
 					//calculate platt scaled tsYhat again for measures
-					tsYhat = src.Zscore(tsYhat)
-					tsYhat, _ = src.Platt(tsYhat, tsYfold, tsYhat)
-					thres := src.FscoreThres(tsYfold, tsYhat, fBetaThres)
-					_ = src.PlattChopScale(tsYfold, tsYhat)
+					_, nCol := tsYhat.Caps()
+					minMSElamda := make([]float64, nCol)
+					minMSE := make([]float64, nCol)
+					for p := 0; p < len(plattRobustLamda); p++ {
+						for q := 0; q < nCol; q++ {
+							if p == 0 {
+								minMSE[q] = plattRobustMeasure[c].At(p, q)
+								minMSElamda[q] = plattRobustLamda[p]
+							} else {
+								if plattRobustMeasure[c].At(p, q) < minMSE[q] {
+									minMSE[q] = plattRobustMeasure[c].At(p, q)
+									minMSElamda[q] = plattRobustLamda[p]
+								}
+							}
+						}
+					}
+					//tsYhat = src.SigmoidMatrix(tsYhat)
+					//tsYhat = src.Zscore(tsYhat)
+					tsYhat, _ = src.QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
+					tsYhat, _, _ = src.Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
+					thres := src.FscoreThres(tsYfold, tsYhat, fBetaThres, true)
+					tsYhat, thres = src.QuantileNorm(tsYhat, thres, true)
+					//tsYhat, thres = src.QuantileNorm(tsYhat, thres, true)
 					accuracy, microF1, microAupr, macroAupr, kPrec, firstAupr := src.Report(tsYfold, tsYhat, thres, rankCut, false)
 					trainMeasure.Set(c, 3, trainMeasure.At(c, 3)+accuracy)
 					trainMeasure.Set(c, 5, trainMeasure.At(c, 5)+microF1)
@@ -336,27 +397,31 @@ Sample usages:
 					trainMeasure.Set(c, 11, trainMeasure.At(c, 11)+kPrec)
 					trainMeasure.Set(c, 13, trainMeasure.At(c, 13)+firstAupr)
 					//probability to be recalibrated for label dependency, subset train by fold
-					tsYhat = src.MultiLabelRecalibrate(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls, &wg, &mutex)
-					thres = src.FscoreThres(tsYfold, tsYhat, fBetaThres)
-					//update MultiLabelRecalibrate tsYhat to YhPlattSet
-					src.YhPlattSetUpdate(i, c, YhPlattSetCalibrated, tsYhat, iFoldMarker[c])
-					accuracy, microF1, microAupr, macroAupr, kPrec, firstAupr = src.Report(tsYfold, tsYhat, thres, rankCut, false)
-					trainMeasure.Set(c, 4, trainMeasure.At(c, 4)+accuracy)
-					trainMeasure.Set(c, 6, trainMeasure.At(c, 6)+microF1)
-					trainMeasure.Set(c, 8, trainMeasure.At(c, 8)+microAupr)
-					trainMeasure.Set(c, 10, trainMeasure.At(c, 10)+macroAupr)
-					trainMeasure.Set(c, 12, trainMeasure.At(c, 12)+kPrec)
-					trainMeasure.Set(c, 14, trainMeasure.At(c, 14)+firstAupr)
+					if nKnn > 0 {
+						//_ = src.PlattChopScale(tsYfold, tsYhat)
+						//tsYhat, thres = src.QuantileNorm(tsYhat, thres, true)
+						tsYhat = src.MultiLabelRecalibrate(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls, &wg, &mutex)
+						thres = src.FscoreThres(tsYfold, tsYhat, fBetaThres, true)
+						//update MultiLabelRecalibrate tsYhat to YhPlattSet
+						src.YhPlattSetUpdate(i, c, YhPlattSetCalibrated, tsYhat, iFoldMarker[c])
+						accuracy, microF1, microAupr, macroAupr, kPrec, firstAupr = src.Report(tsYfold, tsYhat, thres, rankCut, false)
+						trainMeasure.Set(c, 4, trainMeasure.At(c, 4)+accuracy)
+						trainMeasure.Set(c, 6, trainMeasure.At(c, 6)+microF1)
+						trainMeasure.Set(c, 8, trainMeasure.At(c, 8)+microAupr)
+						trainMeasure.Set(c, 10, trainMeasure.At(c, 10)+macroAupr)
+						trainMeasure.Set(c, 12, trainMeasure.At(c, 12)+kPrec)
+						trainMeasure.Set(c, 14, trainMeasure.At(c, 14)+firstAupr)
+					}
 					c += 1
 
 				}
 			}
 		}
-		log.Print("pass training")
+		log.Print("pass training.")
 
 		//choosing all hyper parameters, nDim in CCA, lamda and kNN calibration
-		cBestRaw, vBestRaw := src.BestHyperParameterSetByMeasure(trainMeasure, 13)
-		cBestKnn, vBestKnn := src.BestHyperParameterSetByMeasure(trainMeasure, 14)
+		cBestRaw, vBestRaw := src.BestHyperParameterSetByMeasure(trainMeasure, 7)
+		cBestKnn, vBestKnn := src.BestHyperParameterSetByMeasure(trainMeasure, 8)
 		cBest := 0
 		isKnn := false
 		if vBestKnn > vBestRaw {
@@ -371,24 +436,69 @@ Sample usages:
 		//maxArr := []float64{}
 		thres := mat64.NewDense(0, 0, nil)
 		plattAB := mat64.NewDense(0, 0, nil)
+		//minMSElamda
+		_, nCol := plattRobustMeasure[cBest].Caps()
+		minMSElamda := make([]float64, nCol)
+		minMSE := make([]float64, nCol)
+		for p := 0; p < len(plattRobustLamda); p++ {
+			for q := 0; q < nCol; q++ {
+				if p == 0 {
+					minMSE[q] = plattRobustMeasure[cBest].At(p, q)
+					minMSElamda[q] = plattRobustLamda[p]
+				} else {
+					if plattRobustMeasure[cBest].At(p, q) < minMSE[q] {
+						minMSE[q] = plattRobustMeasure[cBest].At(p, q)
+						minMSElamda[q] = plattRobustLamda[p]
+					}
+				}
+			}
+		}
 		//platt scale for testing
-		YhPlattScale := src.Zscore(YhPlattSet[cBest])
-		YhPlattScale, plattAB = src.Platt(YhPlattScale, yPlattSet[cBest], YhPlattScale)
-		maxArr := src.PlattChopScale(yPlattSet[cBest], YhPlattScale)
+		//YhPlattScale := src.SigmoidMatrix(YhPlattSet[cBest])
+		//YhPlattScale := src.Zscore(YhPlattSet[cBest])
+		YhPlattScale, _ := src.QuantileNorm(YhPlattSet[cBest], mat64.NewDense(0, 0, nil), false)
+		//YhPlattScale := src.EleCopy(YhPlattSet[cBest])
+		YhPlattScale, plattAB, _ = src.Platt(YhPlattScale, yPlattSet[cBest], YhPlattScale, minMSElamda)
+		YhPlattScale, _ = src.QuantileNorm(YhPlattScale, mat64.NewDense(0, 0, nil), false)
+		//maxArr := []float64{}
 		if isKnn {
-			thres = src.FscoreThres(yPlattSet[cBest], YhPlattSetCalibrated[cBest], fBetaThres)
+			log.Print("choose kNN calibration.")
+			//maxArr = src.PlattChopScale(yPlattSet[cBest], YhPlattScale)
+			//fBetaThres = 2 * trainMeasure.At(cBest, 14) / trainMeasure.At(cBest, 2)
+			//if fBetaThres < 0.5 {
+			//	fBetaThres = 0.5
+			//} else if fBetaThres > 1.0 {
+			//	fBetaThres = 1.0
+			//}
+			thres = src.FscoreThres(yPlattSet[cBest], YhPlattSetCalibrated[cBest], fBetaThres, true)
+			//_, thres = src.QuantileNorm(YhPlattSetCalibrated[cBest], thres, true)
 		} else {
-			thres = src.FscoreThres(yPlattSet[cBest], YhPlattScale, fBetaThres)
+			log.Print("choose raw score.")
+			//fBetaThres = 2 * trainMeasure.At(cBest, 13) / trainMeasure.At(cBest, 2)
+			//if fBetaThres < 0.5 {
+			//	fBetaThres = 0.5
+			//} else if fBetaThres > 1.0 {
+			//	fBetaThres = 1.0
+			//}
+			thres = src.FscoreThres(yPlattSet[cBest], YhPlattScale, fBetaThres, true)
+			//_, thres = src.QuantileNorm(YhPlattScale, thres, true)
 		}
 		//testing run with cBest hyperparameter
 		YhSet, _ := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
-		tsYhat := src.Zscore(YhSet[0])
+		//tsYhat := src.SigmoidMatrix(YhSet[0])
+		//tsYhat := src.Zscore(YhSet[0])
+		tsYhat, _ := src.QuantileNorm(YhSet[0], mat64.NewDense(0, 0, nil), false)
+		//tsYhat := src.EleCopy(YhSet[0])
 		tsYhat = src.PlattScaleSet(tsYhat, plattAB)
-		src.TestDataPlattChopScale(tsYhat, maxArr)
+		tsYhat, _ = src.QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
 		if isKnn {
+			//src.TestDataPlattChopScale(tsYhat, maxArr)
 			tsXdata = src.RefillIndCol(tsXdata, indAccum)
 			tsYhat = src.MultiLabelRecalibrate(nKnn, tsYhat, tsXdata, yPlattSet[cBest], yPredSet[cBest], xSet[cBest], posLabelRls, negLabelRls, &wg, &mutex)
-		}
+			tsYhat, _ = src.QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
+		} //else {
+		//	tsYhat, _ = src.QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
+		//}
 		//corresponding testing measures
 		c := 0
 		i := 0
@@ -458,6 +568,6 @@ func init() {
 	tuneCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
 	tuneCmd.PersistentFlags().Bool("addPrior", false, "adding additional priors, default false")
 	tuneCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
-	tuneCmd.Flags().Float64("alpha", 0.2, "alpha for propgation, default 0.6")
+	tuneCmd.Flags().Float64("alpha", 0.2, "alpha for propgation, default 0.2")
 	tuneCmd.Flags().Bool("ec", false, "ec method for propgation, default false")
 }

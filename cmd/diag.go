@@ -65,7 +65,10 @@ var diagCmd = &cobra.Command{
 		//trXdata, _, _, _ := src.ReadFile(trX, false, false)
 		trYhPlattScaleData, _, _, _ := src.ReadFile(trYhPlattScale, false, false)
 		tsYhPlattScaleData, _, _, _ := src.ReadFile(tsYhPlattScale, false, false)
-		thres := src.FscoreThres(trYdata, trYhPlattScaleData, 1.0)
+		thres := src.FscoreThres(trYdata, trYhPlattScaleData, 0.5, false)
+		trYhPlattScaleData, thres = src.QuantileNorm(trYhPlattScaleData, thres, true)
+		src.ColMaxMin(trYhPlattScaleData)
+		tsYhPlattScaleData, _ = src.QuantileNorm(tsYhPlattScaleData, mat64.NewDense(0, 0, nil), false)
 		fmt.Println(thres)
 		//run
 		//YhSet, colSum := src.EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, &wg, &mutex)
@@ -74,10 +77,10 @@ var diagCmd = &cobra.Command{
 		//tsYdata = src.PosSelect(tsYdata, colSum)
 		//rebaData := src.RebalanceData(trYdata)
 		//measures
-		testF1 := mat64.NewDense(1, 4, nil)
-		testAccuracy := mat64.NewDense(1, 4, nil)
-		testMicroAupr := mat64.NewDense(1, 4, nil)
-		testMacroAupr := mat64.NewDense(1, 4, nil)
+		//testF1 := mat64.NewDense(1, 4, nil)
+		//testAccuracy := mat64.NewDense(1, 4, nil)
+		//testMicroAupr := mat64.NewDense(1, 4, nil)
+		//testMacroAupr := mat64.NewDense(1, 4, nil)
 
 		//out dir
 		err := os.MkdirAll("./"+resFolder, 0755)
@@ -86,41 +89,41 @@ var diagCmd = &cobra.Command{
 			return
 		}
 		//corresponding testing measures
-		c := 0
-		i := 0
+		//c := 0
+		//i := 0
 		for j := 0; j < len(sigmaFctsSet); j++ {
 			//microF1, accuracy, macroAupr, microAupr := src.Report(tsYdata, YhSet[c], rebaData, rankCut, false)
 			//accuracy, microF1, microAupr, macroAupr := src.Report(tsYdata, YhSet[c], thres, rankCut, false)
 			accuracy, microF1, microAupr, macroAupr, _, _ := src.Report(tsYdata, tsYhPlattScaleData, thres, rankCut, true)
 			fmt.Println(accuracy, microF1, microAupr, macroAupr)
-			testF1.Set(c, 0, float64(kSet[i]))
-			testF1.Set(c, 1, sigmaFctsSet[j])
-			testF1.Set(c, 2, testF1.At(c, 2)+1.0)
-			testF1.Set(c, 3, testF1.At(c, 3)+microF1)
-			testAccuracy.Set(c, 0, float64(kSet[i]))
-			testAccuracy.Set(c, 1, sigmaFctsSet[j])
-			testAccuracy.Set(c, 2, testAccuracy.At(c, 2)+1.0)
-			testAccuracy.Set(c, 3, testAccuracy.At(c, 3)+accuracy)
-			testMicroAupr.Set(c, 0, float64(kSet[i]))
-			testMicroAupr.Set(c, 1, sigmaFctsSet[j])
-			testMicroAupr.Set(c, 2, testMicroAupr.At(c, 2)+1.0)
-			testMicroAupr.Set(c, 3, testMicroAupr.At(c, 3)+microAupr)
-			testMacroAupr.Set(c, 0, float64(kSet[i]))
-			testMacroAupr.Set(c, 1, sigmaFctsSet[j])
-			testMacroAupr.Set(c, 2, testMacroAupr.At(c, 2)+1.0)
-			testMacroAupr.Set(c, 3, testMacroAupr.At(c, 3)+macroAupr)
-			c += 1
+			//testF1.Set(c, 0, float64(kSet[i]))
+			//testF1.Set(c, 1, sigmaFctsSet[j])
+			//testF1.Set(c, 2, testF1.At(c, 2)+1.0)
+			//testF1.Set(c, 3, testF1.At(c, 3)+microF1)
+			//testAccuracy.Set(c, 0, float64(kSet[i]))
+			//testAccuracy.Set(c, 1, sigmaFctsSet[j])
+			//testAccuracy.Set(c, 2, testAccuracy.At(c, 2)+1.0)
+			//testAccuracy.Set(c, 3, testAccuracy.At(c, 3)+accuracy)
+			//testMicroAupr.Set(c, 0, float64(kSet[i]))
+			//testMicroAupr.Set(c, 1, sigmaFctsSet[j])
+			//testMicroAupr.Set(c, 2, testMicroAupr.At(c, 2)+1.0)
+			//testMicroAupr.Set(c, 3, testMicroAupr.At(c, 3)+microAupr)
+			//testMacroAupr.Set(c, 0, float64(kSet[i]))
+			//testMacroAupr.Set(c, 1, sigmaFctsSet[j])
+			//testMacroAupr.Set(c, 2, testMacroAupr.At(c, 2)+1.0)
+			//testMacroAupr.Set(c, 3, testMacroAupr.At(c, 3)+macroAupr)
+			//c += 1
 		}
 
 		//result file.
-		oFile := "./" + resFolder + ".cvTesting.microF1.txt"
-		src.WriteFile(oFile, testF1)
-		oFile = "./" + resFolder + ".cvTesting.accuracy.txt"
-		src.WriteFile(oFile, testAccuracy)
-		oFile = "./" + resFolder + ".cvTesting.macroAupr.txt"
-		src.WriteFile(oFile, testMacroAupr)
-		oFile = "./" + resFolder + ".cvTesting.microAupr.txt"
-		src.WriteFile(oFile, testMicroAupr)
+		//oFile := "./" + resFolder + ".cvTesting.microF1.txt"
+		//src.WriteFile(oFile, testF1)
+		//oFile = "./" + resFolder + ".cvTesting.accuracy.txt"
+		//src.WriteFile(oFile, testAccuracy)
+		//oFile = "./" + resFolder + ".cvTesting.macroAupr.txt"
+		//src.WriteFile(oFile, testMacroAupr)
+		//oFile = "./" + resFolder + ".cvTesting.microAupr.txt"
+		//src.WriteFile(oFile, testMicroAupr)
 		//oFile = "./" + resFolder + ".test.probMatrix.txt"
 		//src.WriteFile(oFile, YhSet[0])
 		//oFile = "./" + resFolder + ".thres.txt"

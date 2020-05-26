@@ -21,7 +21,7 @@ type combine struct {
 	Combine []int
 }
 
-func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
+func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int][]int) {
 	nRow, nLabel := trY.Caps()
 	rowUsed := make(map[int]bool)
 	allCombine := make(map[string]float64)
@@ -149,14 +149,14 @@ func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
 	}
 	//balance negative /positive ratio
 	nNeg := len(allNegRow)
-	//nPos := nRow - nNeg
-	//if nNeg/nPos > 1000 {
-	//	if isOutInfo {
-	//		fmt.Println("negative instance", nNeg, "is too many for ", nPos, " postives.")
-	//		fmt.Println("down sampling negatives to 2 * ", nPos)
-	//	}
-	//	nNeg = nPos * 1000
-	//}
+	nPos := nRow - nNeg
+	if nNeg/nPos > ratio {
+		if isOutInfo {
+			log.Print("negative instance ", nNeg, " is too many for ", nPos, " postives.")
+			log.Print("down sampling negatives to ", ratio, " * ", nPos)
+		}
+		nNeg = nPos * ratio
+	}
 
 	nNegPerFold := make([]int, nFold)
 	for j := 0; j < nNeg; j++ {
@@ -166,15 +166,15 @@ func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
 		perFold[iFold] -= 1.0
 	}
 	if isOutInfo {
-		log.Print("SOIS folds generated\n")
+		log.Print("SOIS folds generated.\n")
 		log.SetFlags(0)
-		log.Print("negatives per fold.")
+		log.Print("\tnegatives per fold.")
 		str := ""
 		for j := 0; j < nFold; j++ {
 			str = str + "\t" + strconv.Itoa(nNegPerFold[j])
 		}
 		log.Print(str)
-		log.Print("\npositive per fold(row) per label(column).")
+		log.Print("\n\tpositive per fold(row) per label(column).")
 		for i := 0; i < nFold; i++ {
 			nPos := make([]int, nLabel)
 			for j := 0; j < nLabel; j++ {
@@ -191,6 +191,7 @@ func SOIS(trY *mat64.Dense, nFold int, isOutInfo bool) (folds map[int][]int) {
 			log.Print(str)
 		}
 	}
+	log.SetFlags(log.LstdFlags)
 	return folds
 }
 func remove(slice []int, i int) []int {

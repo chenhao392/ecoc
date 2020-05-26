@@ -19,6 +19,111 @@ type kv struct {
 	Value float64
 }
 
+func QuantileNorm(data *mat64.Dense, thresData *mat64.Dense, isTransThres bool) (normData *mat64.Dense, normThresData *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	normData = mat64.NewDense(nRow, nCol, nil)
+	rowTotalData := mat64.NewDense(0, 0, nil)
+	if isTransThres {
+		rowTotalData = mat64.NewDense(nRow+1, 1, nil)
+	} else {
+		rowTotalData = mat64.NewDense(nRow, 1, nil)
+	}
+	normThresData = mat64.NewDense(1, nCol, nil)
+	for j := 0; j < nCol; j++ {
+		var sortYh []kv
+		for i := 0; i < nRow; i++ {
+			sortYh = append(sortYh, kv{i, data.At(i, j)})
+		}
+		if isTransThres {
+			sortYh = append(sortYh, kv{nRow, thresData.At(0, j)})
+		}
+		sort.Slice(sortYh, func(i, j int) bool {
+			return sortYh[i].Value > sortYh[j].Value
+		})
+		//fill normData with rank, tmp, but keep aggregated raw values
+		for i := 0; i <= nRow; i++ {
+			if isTransThres && sortYh[i].Key == nRow {
+				normThresData.Set(0, j, float64(i))
+			} else {
+				if !isTransThres && i == nRow {
+					//skip last row if no thres data
+					//as no nRow index for sortYh and matrix
+				} else {
+					rowTotalData.Set(i, 0, rowTotalData.At(i, 0)+sortYh[i].Value)
+					normData.Set(sortYh[i].Key, j, float64(i))
+				}
+
+			}
+		}
+	}
+	//mean value, max, min, mm
+	max := -999999999999.9
+	min := 999999999999.9
+	for i := 0; i <= nRow; i++ {
+		if !isTransThres && i == nRow {
+			//skip last row if no thres data
+			//as no nRow index for sortYh and matrix
+		} else {
+			value := rowTotalData.At(i, 0)
+			if value > max {
+				max = value
+			}
+			if value < min {
+				min = value
+			}
+		}
+	}
+	mm := max - min
+	//scale to 0-1
+	for i := 0; i <= nRow; i++ {
+		if !isTransThres && i == nRow {
+			//skip last row if no thres data
+			//as no nRow index for sortYh and matrix
+		} else {
+			value := rowTotalData.At(i, 0)
+			rowTotalData.Set(i, 0, (value-min)/mm)
+		}
+	}
+	//fill normValue by rank
+
+	for j := 0; j < nCol; j++ {
+		for i := 0; i <= nRow; i++ {
+			if isTransThres && i == nRow {
+				rank := int(normThresData.At(0, j))
+				//fmt.Println(i, j, rank)
+				normThresData.Set(0, j, rowTotalData.At(rank, 0))
+			} else {
+				if !isTransThres && i == nRow {
+					//skip last row if no thres data
+					//as no nRow index for sortYh and matrix
+				} else {
+					rank := int(normData.At(i, j))
+					normData.Set(i, j, rowTotalData.At(rank, 0))
+				}
+			}
+		}
+	}
+	return normData, normThresData
+}
+
+func ColMaxMin(data *mat64.Dense) {
+	nRow, nCol := data.Caps()
+	for j := 0; j < nCol; j++ {
+		max := -1.0
+		min := 1.0
+		for i := 0; i < nRow; i++ {
+			value := data.At(i, j)
+			if value > max {
+				max = value
+			}
+			if value < min {
+				min = value
+			}
+		}
+		fmt.Println(j, "max: ", max, "min: ", min)
+	}
+
+}
 func LabelRelationship(trYdata *mat64.Dense) (posLabelRls *mat64.Dense, negLabelRls *mat64.Dense) {
 	nRow, nCol := trYdata.Caps()
 	posLabelRls = mat64.NewDense(nCol, nCol, nil)
@@ -92,24 +197,41 @@ func AccumPlatt(c int, colSum *mat64.Vector, plattAB *mat64.Dense, plattASet *ma
 		}
 	}
 }
-func Platt(trYhat *mat64.Dense, trY *mat64.Dense, tsYhat *mat64.Dense) (tsYhh *mat64.Dense, plattAB *mat64.Dense) {
+func Platt(trYhat *mat64.Dense, trY *mat64.Dense, tsYhat *mat64.Dense, lamdaArr []float64) (tsYhh *mat64.Dense, plattAB *mat64.Dense, mseArr []float64) {
 	nRow, nCol := tsYhat.Caps()
 	tsYhh = mat64.NewDense(nRow, nCol, nil)
+	mseArr = make([]float64, 0)
 	plattAB = mat64.NewDense(2, nCol, nil)
 	for i := 0; i < nCol; i++ {
+		//fmt.Println(i, lamdaArr[i])
 		trYhatCol, trYcol := minusValueFilterForPlatt(trYhat.ColView(i), trY.ColView(i))
-		//trYhatColTMM, trYcolTMM := TmmFilterForPlatt(trYhatCol, trYcol)
-		//fmt.Println(i, trYhat.ColView(i))
+		trYhatColTMM, trYcolTMM := TmmFilterForPlatt(trYhatCol, trYcol, lamdaArr[i])
 		//fmt.Println(i, trY.ColView(i))
 		//trYhatColTMM, trYcolTMM := TmmFilterForPlatt(trYhat.ColView(i), trY.ColView(i))
-		A, B := PlattParameterEst(trYhatCol, trYcol)
+		A, B := PlattParameterEst(trYhatColTMM, trYcolTMM)
 		//fmt.Println(i, A, B)
 		plattAB.Set(0, i, A)
 		plattAB.Set(1, i, B)
 		yhh := PlattScale(tsYhat.ColView(i), A, B)
 		tsYhh.SetCol(i, yhh)
+		mse := MSE(trY.ColView(i), tsYhh.ColView(i))
+		mseArr = append(mseArr, mse)
+		//mseM.Set(0, i, mse)
 	}
-	return tsYhh, plattAB
+	return tsYhh, plattAB, mseArr
+}
+
+func MSE(trY *mat64.Vector, trYh *mat64.Vector) (mse float64) {
+	mse = 0.0
+	for i := 0; i < trY.Len(); i++ {
+		if trYh.At(i, 0) < 1.0 {
+			mse += math.Pow(trY.At(i, 0)-trYh.At(i, 0), 2)
+		} else {
+			//mse add zero
+		}
+	}
+	mse = mse / float64(trY.Len())
+	return mse
 }
 
 //chop scale to 0 - 1 range
@@ -127,6 +249,7 @@ func PlattChopScale(tsY *mat64.Dense, tsYhh *mat64.Dense) (maxArr []float64) {
 
 		max := -100000000.0
 		min := 100000000.0
+		//var sortYh []kv
 		for i := 0; i < nRow; i++ {
 			//arr = append(arr, tsYhh.At(i, j))
 			ele := tsYhh.At(i, j)
@@ -145,16 +268,21 @@ func PlattChopScale(tsY *mat64.Dense, tsYhh *mat64.Dense) (maxArr []float64) {
 			}
 			//}
 
+			//sortYh = append(sortYh, kv{i, ele})
 		}
+		//sort.Slice(sortYh, func(i, j int) bool {
+		//	return sortYh[i].Value > sortYh[j].Value
+		//})
+		//min = sortYh[int(0.95*float64(nRow))].Value
 		//med, _ := stats.Median(arr)
 		//for i := 0; i < nRow; i++ {
 		//	arr[i] = math.Abs(arr[i] - med)
 		//}
 		//mad, _ := stats.Median(arr)
-		_, pAupr, _, thres := ComputeAupr(tsY.ColView(j), tsYhh.ColView(j), 0.1)
-		if pAupr > 0.1 {
-			max = thres
-		}
+		//_, pAupr, _, thres := ComputeAupr(tsY.ColView(j), tsYhh.ColView(j), 0.1)
+		//if pAupr > 0.1 {
+		//	max = thres
+		//}
 		if max > 1.0 {
 			max = 1.0
 		}
@@ -185,42 +313,48 @@ func TestDataPlattChopScale(tsYhh *mat64.Dense, maxArr []float64) {
 
 		min := 100000000.0
 		max := -100000000.0
+		//var sortYh []kv
 		for i := 0; i < nRow; i++ {
 			ele := tsYhh.At(i, j)
-			if ele < min {
+			if ele < min && ele > 0.0 {
 				min = ele
 			}
 			if ele > max {
 				max = ele
 			}
+			//sortYh = append(sortYh, kv{i, ele})
 
 		}
-		if j == 0 {
-			fmt.Println("train max: ", maxArr[j])
-		}
+		//if j == 0 {
+		//	fmt.Println("train max: ", maxArr[j])
+		//}
 		if maxArr[j] > max {
 			maxArr[j] = max
 		}
+		//sort.Slice(sortYh, func(i, j int) bool {
+		//	return sortYh[i].Value > sortYh[j].Value
+		//})
+		//min = sortYh[int(0.95*float64(nRow))].Value
 		mm := maxArr[j] - min
-		if j == 0 {
-			fmt.Println("test max: ", maxArr[j], min, max)
-			for i := 0; i < nRow; i++ {
-				fmt.Println("ele:\t", tsYhh.At(i, j))
-			}
-		}
+		//if j == 0 {
+		//fmt.Println("test max: ", maxArr[j], min, max)
+		//for i := 0; i < nRow; i++ {
+		//	fmt.Println("ele:\t", tsYhh.At(i, j))
+		//}
+		//}
 		for i := 0; i < nRow; i++ {
 			ele := tsYhh.At(i, j)
 			if ele >= maxArr[j] {
 				tsYhh.Set(i, j, 1.0)
-				fmt.Println("fromTo:", ele, 1.0)
+				//fmt.Println("fromTo:", ele, 1.0)
 			} else {
 				tsYhh.Set(i, j, (ele-min)/mm)
-				fmt.Println("fromTo:", ele, (ele-min)/mm)
+				//fmt.Println("fromTo:", ele, (ele-min)/mm)
 			}
 		}
 	}
 }
-func TmmFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYhat *mat64.Vector, trY *mat64.Vector) {
+func TmmFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector, lamda float64) (trYhat *mat64.Vector, trY *mat64.Vector) {
 	n := inTrYhat.Len()
 	var sortYh []kv
 	for i := 0; i < n; i++ {
@@ -235,8 +369,9 @@ func TmmFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYhat *mat
 		return sortYh[i].Value > sortYh[j].Value
 	})
 
-	up := int(float64(n) * 0.01)
-	lp := int(float64(n) * 0.99)
+	up := int(float64(n) * lamda)
+	//lp := int(float64(n) * 0.99)
+	lp := n - 1
 	upThres := sortYh[up].Value
 	lpThres := sortYh[lp].Value
 
@@ -258,10 +393,6 @@ func TmmFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYhat *mat
 		}
 	}
 	if sumLabel == 0.0 && upThres > 0 {
-		//fmt.Println("tick: ", tick, up, lp, upThres, lpThres)
-		//fmt.Println(inTrYhat)
-		//fmt.Println(sortYh)
-		//os.Exit(0)
 		tmpTrY[indexUP] = 1.0
 	}
 	trYhat = mat64.NewVector(len(tmpTrYhat), tmpTrYhat)
