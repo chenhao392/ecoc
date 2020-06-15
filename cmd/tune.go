@@ -20,11 +20,11 @@
 
 package cmd
 
-//#include <stdlib.h>
-//import "C"
 import (
 	"fmt"
+	"github.com/chenhao392/ecoc/src"
 	"github.com/gonum/matrix/mat64"
+	"github.com/spf13/cobra"
 	"log"
 	"math"
 	"math/rand"
@@ -32,56 +32,50 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
-	//"sort"
 	"strings"
-	//"sync"
-	//"unsafe"
-	"github.com/chenhao392/ecoc/src"
-	"github.com/spf13/cobra"
-	//"time"
 )
 
 // tuneCmd represents the tune command
 var tuneCmd = &cobra.Command{
 	Use:   "tune",
 	Short: "hyperparameter tuning and benchmarking",
-	Long: `Hyperparameter tuning and benchmarking for the following parameters.
+	Long: `
+	  ______ _____ ____   _____   _______ _    _ _   _ ______ 
+	 |  ____/ ____/ __ \ / ____| |__   __| |  | | \ | |  ____|
+	 | |__ | |   | |  | | |         | |  | |  | |  \| | |__   
+	 |  __|| |   | |  | | |         | |  | |  | | . \ |  __|  
+	 | |___| |___| |__| | |____     | |  | |__| | |\  | |____ 
+	 |______\_____\____/ \_____|    |_|   \____/|_| \_|______|
+		                                                             
+		                                                             
+Hyperparameter tuning and benchmarking for the following parameters.
  1) number of CCA dimensions for explaining the label dependency.
  2) the trade-off between the gaussion and binomial model in decoding.
 
-The label data in tab delimited matrix form is required as train/testing matrices.
-The tune command automatically use the feature data (ECOC matrix) if provided with
--tsX and -trX flags. Otherwise, it computes the corresponding matrices using label 
-propagation on a network or networks.
+ The inputs are (1) gene-gene network or a set of network 
+ and (2) multi-label gene by label matrices for training and
+ testing, where "1" mark a gene annotated by a label.  
+ 
+ 1) The network file is a tab-delimited file with three columns. 
+    The first two columns define gene-gene interactions using 
+    the gene IDs. The third column is the confidence score. Multiple 
+    network files are also supported, with the file names concatenated
+    together with comma(s). 
 
- 1) In label data, each row is one instance/gene and each column is one 
-    label, such as GO term or pathway ID. the first column should be unique 
-	instance/gene IDs. 
- 2) In feature data, each row is also one instance/gene, using the same exact 
-    order as defined in label data matrices. And each column is one feature in 0-1 
-	scale. The column order can be randomly shuffled.
+ 2) The multi-label matrix is a tab-delimited file with each gene 
+    for one row and each label for one column. If a gene is annotated
+    with a label, the corresponding cell is filled with 1, otherwise 0. 
 
-If at least one network file is provided and no feature data found, the program will 
-compute the matrix.
-
-1) The network file is a tab delimited file with three columns. The first two
-    columns define gene-gene interactions using the instance/gene names IDs used 
-	in training and test data. The third column is the confidence score.
- 2) Multiple additional priors can be added into the label propagation process if provided.
-
-Sample usages:
-  with feature data:
-  ecoc tune -trY training_label -tsY test_label -trX training_feature -tsX testing_feature 
-  with network data:
-  ecoc tune -trY training_label -tsY test_label -n network_file -nFold 5 -t 48
-  with network data and addtional prior:
-  ecoc tune -trY training_label -tsY test_label -n net_file1,net_file2 -p prior_file1,prior_file2`,
+ Sample usages:
+   ecoc tune -trY trMatrix.txt -tsY tsMatrix.txt \
+             -n net1.txt,net2.txt -nFold 5 -t 48`,
 
 	Run: func(cmd *cobra.Command, args []string) {
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
-		priorMatrixFiles, _ := cmd.Flags().GetString("p")
+		//priorMatrixFiles, _ := cmd.Flags().GetString("p")
+		priorMatrixFiles := ""
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		rankCut, _ := cmd.Flags().GetInt("c")
@@ -92,7 +86,8 @@ Sample usages:
 		nFold, _ := cmd.Flags().GetInt("nFold")
 		isDada, _ := cmd.Flags().GetBool("ec")
 		alpha, _ := cmd.Flags().GetFloat64("alpha")
-		isAddPrior, _ := cmd.Flags().GetBool("addPrior")
+		//isAddPrior, _ := cmd.Flags().GetBool("addPrior")
+		isAddPrior := false
 
 		fBetaThres := 1.0
 		//out dir and logging
@@ -108,7 +103,7 @@ Sample usages:
 		defer logFile.Close()
 		log.SetOutput(logFile)
 		log.Print("Program started.")
-		//
+		//program started.
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
 		debug.SetGCPercent(50)
@@ -522,20 +517,20 @@ Sample usages:
 func init() {
 	rootCmd.AddCommand(tuneCmd)
 
-	tuneCmd.PersistentFlags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
-	tuneCmd.PersistentFlags().String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
-	tuneCmd.PersistentFlags().String("res", "resultEcoc", "resultFolder")
+	tuneCmd.Flags().Float64("alpha", 0.2, "alpha value for a single label propgation\n")
+	tuneCmd.Flags().Int("c", 3, "top c predictions for a gene to used\nin multi-label F1 calculation")
+	tuneCmd.Flags().Bool("ec", false, "experimental label propgation alternative\n(default false)")
+	tuneCmd.Flags().Bool("isCali", false, "nearest neighbors calibration for the predictions\n(default false)")
+	tuneCmd.Flags().Bool("isFirstLabel", false, "training objection as the aupr of first label/column\n(default false)")
+	tuneCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor multiabel probability calibration\n")
+	tuneCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")
+	tuneCmd.Flags().Int("nFold", 5, "number of folds for cross validation\n")
+	tuneCmd.Flags().Bool("r", false, "experimental regularized CCA\n(default false)")
+	tuneCmd.Flags().String("res", "result", "result folder")
+	tuneCmd.Flags().Int("t", 48, "number of threads")
+	tuneCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
+	tuneCmd.Flags().String("tsY", "data/tsMatrix.txt", "test label matrix")
 
-	tuneCmd.PersistentFlags().String("n", "data/hs_db_net.txt,data/hs_fus_net.txt", "network file")
-	tuneCmd.PersistentFlags().String("p", "", "addtional prior file, use together with addPrior flag")
-	tuneCmd.PersistentFlags().Int("t", 48, "number of threads")
-	tuneCmd.PersistentFlags().Int("c", 3, "rank cut (alpha) for F1 calculation")
-	tuneCmd.PersistentFlags().Int("k", 10, "number of nearest neighbors for multiabel probability calibration")
-	tuneCmd.PersistentFlags().Int("nFold", 5, "number of folds for cross validation")
-	tuneCmd.PersistentFlags().Bool("addPrior", false, "adding additional priors, default false")
-	tuneCmd.PersistentFlags().Bool("r", false, "regularize CCA, default false")
-	tuneCmd.PersistentFlags().Bool("isCali", false, "kNN calibration post ecoc, default false")
-	tuneCmd.PersistentFlags().Bool("isFirstLabel", false, "training objection using aupr of first label, default false")
-	tuneCmd.Flags().Float64("alpha", 0.2, "alpha for propgation, default 0.2")
-	tuneCmd.Flags().Bool("ec", false, "ec method for propgation, default false")
+	//tuneCmd.Flags().String("p", "", "addtional prior file, use together with addPrior flag")
+	//tuneCmd.PersistentFlags().Bool("addPrior", false, "adding additional priors, default false")
 }
