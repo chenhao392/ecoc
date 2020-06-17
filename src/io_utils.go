@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/gonum/matrix/mat64"
+	"log"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 )
@@ -220,4 +223,55 @@ func WriteNetwork(outFile string, data *mat64.Dense, idxToId map[int]string) (er
 	}
 	wr.Flush()
 	return err
+}
+
+func WriteOutputFiles(isVerbose bool, resFolder string, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
+	oFile := "./" + resFolder + "/test.probMatrix.txt"
+	WriteFile(oFile, tsYhat)
+	if isVerbose {
+		oFile = "./" + resFolder + "/cvTraining.measure.txt"
+		WriteFile(oFile, trainMeasure)
+		oFile = "./" + resFolder + "/cvTesting.measure.txt"
+		WriteFile(oFile, testMeasure)
+		oFile = "./" + resFolder + "/posLabelRls.txt"
+		WriteFile(oFile, posLabelRls)
+		oFile = "./" + resFolder + "/negLabelRls.txt"
+		WriteFile(oFile, negLabelRls)
+		oFile = "./" + resFolder + "/thres.txt"
+		WriteFile(oFile, thres)
+		oFile = "./" + resFolder + "/train.probMatrix.txt"
+		WriteFile(oFile, Yhat)
+		oFile = "./" + resFolder + "/trainCalibrated.probMatrix.txt"
+		WriteFile(oFile, YhatCalibrated)
+		oFile = "./" + resFolder + "/reorder.trMatrix.txt"
+		WriteFile(oFile, Ylabel)
+
+		//mem profile
+		memprofile := resFolder + "/mem.prof"
+		f, err2 := os.Create(memprofile)
+		if err2 != nil {
+			log.Fatal("could not create memory profile: ", err2)
+		}
+		defer f.Close()
+		runtime.GC() // get up-to-date statistics
+		if err2 := pprof.WriteHeapProfile(f); err2 != nil {
+			log.Fatal("could not write memory profile: ", err2)
+		}
+		defer f.Close()
+	}
+
+}
+
+func Init(resFolder string) {
+	err := os.MkdirAll("./"+resFolder, 0755)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	logFile, err := os.OpenFile("./"+resFolder+"/log.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer logFile.Close()
+	log.SetOutput(logFile)
 }

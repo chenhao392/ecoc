@@ -9,11 +9,6 @@ import (
 	"sync"
 )
 
-//type kv struct {
-//	Key   int
-//	Value float64
-//}
-
 func colNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	n, _ = network.Caps()
 	normNet = mat64.NewDense(n, n, nil)
