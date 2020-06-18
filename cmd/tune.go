@@ -113,7 +113,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		}
 
 		//prepare hyperparameter grid
-		kSet, sigmaFctsSet, _ := src.HyperParameterSet(nLabel, 0.025, 0.225, 8)
+		kSet, _, lamdaSet := src.HyperParameterSet(nLabel, 0.025, 0.225, 8)
 		//_, sigmaFctsSet2, _ := src.HyperParameterSet(nLabel, 0.005, 0.025, 4)
 		//sigmaFctsSet = append(sigmaFctsSet2, sigmaFctsSet...)
 		//min dims, potential bug when cv set's minDims is smaller
@@ -139,11 +139,11 @@ Hyperparameter tuning and benchmarking for the following parameters.
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//measure matrix
-		nL := nK * len(sigmaFctsSet)
+		nL := nK * len(lamdaSet)
 		trainMeasure := mat64.NewDense(nL, 13, nil)
 		testMeasure := mat64.NewDense(1, 7, nil)
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, sigmaFctsSet, kSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")

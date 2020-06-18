@@ -24,14 +24,30 @@ import (
 	"fmt"
 	"github.com/chenhao392/ecoc/src"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 // reportCmd represents the report command
 var reportCmd = &cobra.Command{
 	Use:   "report",
-	Short: "Calculate per label benchmarks",
-	Long:  `Calculate per label benchmarks`,
+	Short: "Calculate per label benchmark scores",
+	Long: `
+
+  ______ _____ ____   _____   _____  ______ _____   ____  _____ _______ 
+ |  ____/ ____/ __ \ / ____| |  __ \|  ____|  __ \ / __ \|  __ \__   __|
+ | |__ | |   | |  | | |      | |__) | |__  | |__) | |  | | |__) | | |   
+ |  __|| |   | |  | | |      |  _  /|  __| |  ___/| |  | |  _  /  | |   
+ | |___| |___| |__| | |____  | | \ \| |____| |    | |__| | | \ \  | |   
+ |______\_____\____/ \_____| |_|  \_\______|_|     \____/|_|  \_\ |_|   
+                                                                           
+Calculate per label benchmark scores.
+  Sample usages:
+  ecoc report --tsY tsMatrix.txt --i pred.matrix.txt --s thres.txt`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cmd.Help()
+			os.Exit(0)
+		}
 		tsY, _ := cmd.Flags().GetString("tsY")
 		tsYh, _ := cmd.Flags().GetString("i")
 		rankCut, _ := cmd.Flags().GetInt("r")
@@ -40,16 +56,16 @@ var reportCmd = &cobra.Command{
 		tsYdata, _, _, _ := src.ReadFile(tsY, true, true)
 		tsYhat, _, _, _ := src.ReadFile(tsYh, false, false)
 		thresData, _, _, _ := src.ReadFile(thresFile, false, false)
-		accuracy, microF1, microAupr, macroAupr, kPrec, _ := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
+		accuracy, microF1, microAupr, macroAupr, _, firstAupr := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
 		//fmt.Println(accuracy, microF1, microAupr, macroAupr)
-		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f kPrec: %1.3f\n", accuracy, microF1, microAupr, macroAupr, kPrec)
+		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f fAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, firstAupr)
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(reportCmd)
-	reportCmd.PersistentFlags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "true testing data")
-	reportCmd.PersistentFlags().String("i", "", "predictions")
-	reportCmd.PersistentFlags().String("s", "", "thresholds")
-	reportCmd.PersistentFlags().Int("r", 3, "predictions")
+	reportCmd.Flags().String("tsY", "data/tsMatrix.txt", "true testing data")
+	reportCmd.Flags().String("i", "", "predictions")
+	reportCmd.Flags().String("s", "", "thresholds")
+	reportCmd.Flags().Int("r", 3, "predictions")
 }

@@ -22,16 +22,31 @@ package cmd
 
 import (
 	"github.com/chenhao392/ecoc/src"
-	//"github.com/gonum/matrix/mat64"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 // netenCmd represents the neten command
 var netenCmd = &cobra.Command{
 	Use:   "neten",
 	Short: "network enhancement",
-	Long:  `network enhancement`,
+	Long: `
+
+  ______ _____ ____   _____   _   _ ______ _______ ______ _   _  
+ |  ____/ ____/ __ \ / ____| | \ | |  ____|__   __|  ____| \ | |
+ | |__ | |   | |  | | |      |  \| | |__     | |  | |__  |  \| |
+ |  __|| |   | |  | | |      | . \ |  __|    | |  |  __| | . \ |
+ | |___| |___| |__| | |____  | |\  | |____   | |  | |____| |\  |
+ |______\_____\____/ \_____| |_| \_|______|  |_|  |______|_| \_|
+                                                                   
+network enhancement for a network.
+  Sample usage:
+  ecoc neten --i net1.txt --o net1enhanced.txt`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cmd.Help()
+			os.Exit(0)
+		}
 		rawNetworkFile, _ := cmd.Flags().GetString("i")
 		enNetworkFile, _ := cmd.Flags().GetString("o")
 		network, _, idxToId := src.ReadNetwork(rawNetworkFile)

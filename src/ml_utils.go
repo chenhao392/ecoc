@@ -43,6 +43,15 @@ func HyperParameterSet(maxDim int, lbL float64, hbL float64, nStep int) (kSet []
 	return kSet, sigmaFctsSet, lamdaSet
 }
 
+func lamdaToSigmaFctsSet(lamdaSet []float64) (sigmaFctsSet []float64) {
+	sigmaFctsSet = make([]float64, 0)
+	for i := 0; i < len(lamdaSet); i++ {
+		sigmaFcts := 1.0 / (lamdaSet[i] * lamdaSet[i])
+		sigmaFctsSet = append(sigmaFctsSet, sigmaFcts)
+	}
+	return sigmaFctsSet
+}
+
 func (f *CvFold) setXY(pos []int, neg []int, matX *mat64.Dense, vecY *mat64.Vector) {
 	_, nColX := matX.Caps()
 	nRowPos := len(pos)

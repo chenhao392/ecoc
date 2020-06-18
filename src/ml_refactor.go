@@ -145,7 +145,7 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 	return cvTrain, cvTest, trXdataCV, indAccum
 }
 
-func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst bool, isKnn bool, sigmaFctsSet []float64, kSet []int, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
+func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
 	//traing data per hyperparameter
 	YhPlattSet := make(map[int]*mat64.Dense)
 	YhPlattSetCalibrated := make(map[int]*mat64.Dense)
@@ -157,13 +157,13 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 	plattRobustLamda := []float64{0.0, 0.04, 0.08, 0.12, 0.16, 0.2}
 
 	for i := 0; i < nFold; i++ {
-		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, sigmaFctsSet, nFold, nK, wg, mutex)
+		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, lamdaSet, nFold, nK, wg, mutex)
 		tsYfold := PosSelect(testFold[i].Y, colSum)
 
 		c := 0
 		//accum calculated training data
 		for m := 0; m < nK; m++ {
-			for n := 0; n < len(sigmaFctsSet); n++ {
+			for n := 0; n < len(lamdaSet); n++ {
 				tsYhat, _ := QuantileNorm(YhSet[c], mat64.NewDense(0, 0, nil), false)
 				_, nCol := tsYhat.Caps()
 				minMSElamda := make([]float64, nCol)
@@ -206,9 +206,9 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 	for i := 0; i < nFold; i++ {
 		c := 0
 		for m := 0; m < nK; m++ {
-			for n := 0; n < len(sigmaFctsSet); n++ {
+			for n := 0; n < len(lamdaSet); n++ {
 				trainMeasure.Set(c, 0, float64(kSet[m]))
-				trainMeasure.Set(c, 1, sigmaFctsSet[n])
+				trainMeasure.Set(c, 1, lamdaSet[n])
 				trainMeasure.Set(c, 2, trainMeasure.At(c, 2)+1.0)
 				yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold := SubSetTrain(i, yPlattSet[c], YhPlattSet[c], yPredSet[c], xSet[c], iFoldMarker[c])
 				//calculate platt scaled tsYhat again for measures
@@ -280,7 +280,7 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 	}
 	//best training parameters, data and max Pos scaling factor
 	kSet = []int{int(trainMeasure.At(cBest, 0))}
-	sigmaFctsSet = []float64{trainMeasure.At(cBest, 1)}
+	lamdaSet = []float64{trainMeasure.At(cBest, 1)}
 	//maxArr := []float64{}
 	thres = mat64.NewDense(0, 0, nil)
 	plattAB := mat64.NewDense(0, 0, nil)
@@ -315,7 +315,7 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 		thres = FscoreThres(yPlattSet[cBest], YhPlattScale, fBetaThres, true)
 	}
 	//testing run with cBest hyperparameter
-	YhSet, _ := EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, sigmaFctsSet, nFold, 1, wg, mutex)
+	YhSet, _ := EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, lamdaSet, nFold, 1, wg, mutex)
 	tsYhat, _ = QuantileNorm(YhSet[0], mat64.NewDense(0, 0, nil), false)
 	tsYhat = PlattScaleSet(tsYhat, plattAB)
 	tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
@@ -327,10 +327,10 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 	//corresponding testing measures
 	c := 0
 	i := 0
-	for j := 0; j < len(sigmaFctsSet); j++ {
+	for j := 0; j < len(lamdaSet); j++ {
 		accuracy, microF1, microAupr, macroAupr, _, _ := Report(tsYdata, tsYhat, thres, rankCut, false)
 		testMeasure.Set(c, 0, float64(kSet[i]))
-		testMeasure.Set(c, 1, sigmaFctsSet[j])
+		testMeasure.Set(c, 1, lamdaSet[j])
 		testMeasure.Set(c, 2, testMeasure.At(c, 2)+1.0)
 		testMeasure.Set(c, 3, testMeasure.At(c, 3)+accuracy)
 		testMeasure.Set(c, 4, testMeasure.At(c, 4)+microF1)

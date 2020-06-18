@@ -1,15 +1,12 @@
 package src
 
 import (
-	//"fmt"
-	//linear "github.com/chenhao392/lineargo"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
 	"gonum.org/v1/gonum/stat/distuv"
 	"log"
 	"math"
 	"math/rand"
-	//"os"
 	"runtime"
 	"sync"
 )
@@ -20,24 +17,14 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 		return
 	}
 	tsYhat := mat64.NewDense(nTs, nLabel, nil)
-	//trYhat := mat64.NewDense(nTr, nLabel, nil)
 	for i := 0; i < nTs; i++ {
 		//the doc seems to be old, (0,x] seems to be correct
 		//dim checked to be correct
 		arr := IOC_MFADecoding(nTs, i, tsY_Prob, tsY_C, sigma, Bsub, k, sigmaFcts, nLabel)
 		tsYhat.SetRow(i, arr)
 	}
-	//for i := 0; i < nTr; i++ {
-	//	arr := IOC_MFADecoding(nTr, i, trY_Prob, trY_C, sigma, Bsub, k, sigmaFcts, nLabel)
-	//	trYhat.SetRow(i, arr)
-	//}
-	//tsYhat = Zscore(tsYhat)
-	//tsYhat, _ = Platt(tsYhat, tsYdata, tsYhat)
-	//trYhat = Platt(trYhat, trYdata, trYhat)
-	//thres := FscoreThres(tsYdata, tsYhat)
 	mutex.Lock()
 	YhSet[c] = tsYhat
-	//thresSet[c] = thres
 	mutex.Unlock()
 }
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
@@ -54,8 +41,9 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[
 	mutex.Unlock()
 }
 
-func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, sigmaFctsSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
+func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
 	YhSet = make(map[int]*mat64.Dense)
+	sigmaFctsSet := lamdaToSigmaFctsSet(lamdaSet)
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
 	//SOIS stratification
@@ -64,7 +52,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
 	_, nLabel := trYdata.Caps()
-	//nRowTsY, _ := tsYdata.Caps()
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
@@ -73,21 +60,10 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	}
 	//tsY_prob and trY_prob for prob tuning
 	tsY_Prob := mat64.NewDense(nTs, nLabel, nil)
-	//trY_Prob := mat64.NewDense(nTr, nLabel, nil)
+
 	//adding bias term for tsXData, trXdata
 	tsXdataB := addBiasTerm(nTs, tsXdata)
 	trXdataB := addBiasTerm(nTr, trXdata)
-	//ones := make([]float64, nTs)
-	//for i := range ones {
-	//	ones[i] = 1
-	//}
-	//tsXdataB := colStack(tsXdata, ones)
-	//adding bias term for trXdata
-	//ones = make([]float64, nTr)
-	//for i := range ones {
-	//	ones[i] = 1
-	//}
-	//trXdataB := colStack(trXdata, ones)
 	regM := mat64.NewDense(1, nLabel, nil)
 	//step 1
 	for i := 0; i < nLabel; i++ {
@@ -108,18 +84,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 				tsY_Prob.Set(j, i, value)
 			}
 		}
-		//trY_Prob
-		//element = mat64.NewDense(0, 0, nil)
-		//element.Mul(trXdataB, wMat)
-		//for j := 0; j < nTr; j++ {
-		//	if label == 1 {
-		//		value := 1.0 / (1 + math.Exp(-1*element.At(j, 0)))
-		//		trY_Prob.Set(j, i, value)
-		//	} else {
-		//		value := 1.0 / (1 + math.Exp(1*element.At(j, 0)))
-		//		trY_Prob.Set(j, i, value)
-		//	}
-		//}
 	}
 	log.Print("step 1: linear code calculated.")
 	//cca
@@ -143,7 +107,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	trY_Cdata.Mul(trYdata, B)
 	//decoding with regression
 	tsY_C := mat64.NewDense(nTs, nLabel, nil)
-	//trY_C := mat64.NewDense(nTr, nLabel, nil)
 	sigma := mat64.NewDense(1, nLabel, nil)
 	//for workers
 	randValues := RandListFromUniDist(nTr)
@@ -626,42 +589,27 @@ func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat6
 }
 
 func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, rowIdx int) {
-	//func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, rowIdx int) (newNegFct *mat64.Dense) {
-	//func fOrderNegFctCal(negFct *mat64.Dense, tsY_C *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int) (newNegFct *mat64.Dense) {
 	_, k := negFct.Caps()
-	//newNegFct = mat64.NewDense(1, k, nil)
 	for i := 0; i < k; i++ {
 		value := Bsub.At(j, i) * Q.At(0, j)
 		negFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
-		//newNegFct.Set(0, i, negFct.At(0, i)+value*value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
-		//value := Bsub.At(j, i) * Bsub.At(j, i) * Q.At(0, j)
-		//newNegFct.Set(0, i, negFct.At(0, i)+value-2*tsY_C.At(rowIdx, i)*Bsub.At(j, i)*Q.At(0, j))
 	}
 	return
-	//return newNegFct
 }
 func sOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, n int) {
-	//func sOrderNegFctCal(negFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, j int, n int) (newNegFct *mat64.Dense) {
 	_, k := negFct.Caps()
-	//newNegFct = mat64.NewDense(1, k, nil)
 	for m := 0; m < k; m++ {
 		value := 2 * Bsub.At(j, m) * Bsub.At(n, m) * Q.At(0, j) * Q.At(0, n)
-		//newNegFct.Set(0, m, negFct.At(0, m)+value)
 		negFct.Set(0, m, negFct.At(0, m)+value)
 	}
-	//return newNegFct
 	return
 }
 func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, i int, j int) {
-	//func posFctCal(posFct *mat64.Dense, Bsub *mat64.Dense, Q *mat64.Dense, i int, j int) (newPosFct *mat64.Dense) {
 	_, k := posFct.Caps()
-	//newPosFct = mat64.NewDense(1, k, nil)
 	for m := 0; m < k; m++ {
 		value := 2 * Bsub.At(i, m) * Bsub.At(j, m) * Q.At(0, j)
-		//newPosFct.Set(0, m, posFct.At(0, m)+value)
 		posFct.Set(0, m, posFct.At(0, m)+value)
 	}
-	//return newPosFct
 	return
 }
 

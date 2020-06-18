@@ -39,12 +39,12 @@ var predCmd = &cobra.Command{
 	Short: "prediction with specific hyperparameters",
 	Long: `
 
-	  ______ _____ ____   _____   _____  _____  ______ _____  
-	  |  ____/ ____/ __ \ / ____| |  __ \|  __ \|  ____|  __ \ 
-	  | |__ | |   | |  | | |      | |__) | |__) | |__  | |  | |
-	  |  __|| |   | |  | | |      |  ___/|  _  /|  __| | |  | |
-	  | |___| |___| |__| | |____  | |    | | \ \| |____| |__| |
-	  |______\_____\____/ \_____| |_|    |_|  \_\______|_____/ 
+  ______ _____ ____   _____   _____  _____  ______ _____  
+ |  ____/ ____/ __ \ / ____| |  __ \|  __ \|  ____|  __ \ 
+ | |__ | |   | |  | | |      | |__) | |__) | |__  | |  | |
+ |  __|| |   | |  | | |      |  ___/|  _  /|  __| | |  | |
+ | |___| |___| |__| | |____  | |    | | \ \| |____| |__| |
+ |______\_____\____/ \_____| |_|    |_|  \_\______|_____/ 
 		                                                             
 		                                                             
 
@@ -70,6 +70,10 @@ var predCmd = &cobra.Command{
    ecoc pred -trY trMatrix.txt -tsY tsMatrix.txt \
              -n net1.txt,net2.txt -nFold 5 -t 48`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			cmd.Help()
+			os.Exit(0)
+		}
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
@@ -114,7 +118,7 @@ var predCmd = &cobra.Command{
 		}
 
 		//prepare hyperparameter grid
-		_, sigmaFctsSet, _ := src.HyperParameterSet(nLabel, lamda, lamda, 1)
+		_, _, lamdaSet := src.HyperParameterSet(nLabel, lamda, lamda, 1)
 		//min dims, potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
 		if nDim >= minDims {
@@ -123,7 +127,7 @@ var predCmd = &cobra.Command{
 			log.Print("number of dimensions set to ", nDim, ".")
 		}
 		nK := 1
-		kSet := [1]int{nDim}
+		kSet := []int{nDim}
 
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold, 10, true)
@@ -139,11 +143,11 @@ var predCmd = &cobra.Command{
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//measure matrix
-		nL := nK * len(sigmaFctsSet)
+		nL := nK * len(lamdaSet)
 		trainMeasure := mat64.NewDense(nL, 13, nil)
 		testMeasure := mat64.NewDense(1, 7, nil)
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, sigmaFctsSet, kSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")

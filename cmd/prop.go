@@ -21,10 +21,10 @@
 package cmd
 
 import (
-	"fmt"
 	"github.com/chenhao392/ecoc/src"
 	"github.com/gonum/matrix/mat64"
 	"github.com/spf13/cobra"
+	"log"
 	"math/rand"
 	"os"
 	"runtime"
@@ -34,22 +34,61 @@ import (
 // propCmd represents the prop command
 var propCmd = &cobra.Command{
 	Use:   "prop",
-	Short: "label propagation",
-	Long:  `generating ecoc matrix using label propagation`,
+	Short: "multi-label propagation",
+	Long: `
+
+  ______ _____ ____   _____   _____  _____   ____  _____  
+ |  ____/ ____/ __ \ / ____| |  __ \|  __ \ / __ \|  __ \ 
+ | |__ | |   | |  | | |      | |__) | |__) | |  | | |__) |
+ |  __|| |   | |  | | |      |  ___/|  _  /| |  | |  ___/ 
+ | |___| |___| |__| | |____  | |    | | \ \| |__| | |     
+ |______\_____\____/ \_____| |_|    |_|  \_\\____/|_|     
+
+
+Propagating a set of labels on networks.
+ The inputs are (1) gene-gene network or a set of network 
+ and (2) multi-label gene by label matrices for training and
+ testing, where "1" mark a gene annotated by a label.  
+    
+    1) The network file is a tab-delimited file with three columns. 
+	The first two columns define gene-gene interactions using 
+    the gene IDs. The third column is the confidence score. Multiple 
+    network files are also supported, with the file names concatenated
+    together with comma(s). 
+
+    2) The multi-label matrix is a tab-delimited file with each gene 
+    for one row and each label for one column. If a gene is annotated
+    with a label, the corresponding cell is filled with 1, otherwise 0. 
+
+  Sample usages:
+     ecoc prop -trY trMatrix.txt -tsGene tsMatrix.txt \
+	 -n net1.txt,net2.txt -nFold 5 -t 48
+	`,
 	Run: func(cmd *cobra.Command, args []string) {
-		tsY, _ := cmd.Flags().GetString("tsY")
+		if len(args) == 0 {
+			cmd.Help()
+			os.Exit(0)
+		}
+		tsGene, _ := cmd.Flags().GetString("tsGene")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
-		priorMatrixFiles, _ := cmd.Flags().GetString("p")
+		//priorMatrixFiles, _ := cmd.Flags().GetString("p")
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		isDada, _ := cmd.Flags().GetBool("ec")
 		alpha, _ := cmd.Flags().GetFloat64("alpha")
-		isAddPrior, _ := cmd.Flags().GetBool("addPrior")
+		//isAddPrior, _ := cmd.Flags().GetBool("addPrior")
+		priorMatrixFiles := ""
+		isAddPrior := false
+
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
+		//result dir and logging
+		src.Init(resFolder)
+		//program start
+		log.Print("Program started.")
 		//read data
-		_, tsRowName, _, _ := src.ReadFile(tsY, true, true)
+		tsRowName := src.ReadIDfile(tsGene)
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
 		tsXdata := mat64.NewDense(0, 0, nil)
 		trXdata := mat64.NewDense(0, 0, nil)
@@ -63,7 +102,7 @@ var propCmd = &cobra.Command{
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		for i := 0; i < len(inNetworkFile); i++ {
 			//idIdx as gene -> idx in net
-			fmt.Println(inNetworkFile[i])
+			log.Print("loading network file: ", inNetworkFile[i])
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 			if !isAddPrior {
 				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
@@ -79,30 +118,27 @@ var propCmd = &cobra.Command{
 		_, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
-			fmt.Println("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
+			log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
 		//result file.
 		oFile := "./" + resFolder + ".trX.txt"
-		src.WriteFile(oFile, trXdata)
+		src.WriteFile(oFile, trXdata, nil, false)
 		oFile = "./" + resFolder + ".tsX.txt"
-		src.WriteFile(oFile, tsXdata)
-
+		src.WriteFile(oFile, tsXdata, nil, false)
+		log.Print("Program finished.")
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(propCmd)
-	propCmd.Flags().String("tsY", "data/human.bp.level1.set1.tsMatrix.txt", "test LabelSet")
-	propCmd.Flags().String("trY", "data/human.bp.level1.set1.trMatrix.txt", "train LabelSet")
-	propCmd.Flags().String("res", "ecoc", "resultBase")
-
-	propCmd.Flags().String("n", "data/hs_exp_net.txt", "network file")
-	propCmd.Flags().String("p", "", "addtional prior file, use together with addPrior flag")
-	propCmd.Flags().Int("t", 48, "number of threads")
-	propCmd.Flags().Int("c", 3, "rank cut (alpha) for F1 calculation")
-	propCmd.Flags().Int("nFold", 5, "number of folds for cross validation")
-	propCmd.Flags().Bool("ec", false, "ec method for propgation, default false")
-	propCmd.Flags().Bool("addPrior", false, "adding additional priors, default false")
+	//propCmd.Flags().Bool("addPrior", false, "adding additional priors, default false")
 	propCmd.Flags().Float64("alpha", 0.2, "alpha for propgation, default 0.6")
+	propCmd.Flags().Bool("ec", false, "experimental label propgation alternative\n(default false)")
+	propCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)")
+	//propCmd.Flags().String("p", "", "addtional prior file, use together with addPrior flag")
+	propCmd.Flags().String("res", "result", "result folder")
+	propCmd.Flags().Int("t", 48, "number of threads")
+	propCmd.Flags().String("tsGene", "data/tsMatrix.txt", "additional genes to propagate values.")
+	propCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
 }

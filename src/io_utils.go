@@ -79,6 +79,32 @@ func idIdxGen(inNetworkFile string) (idIdx map[string]int, idxToId map[int]strin
 	return idIdx, idxToId, count
 }
 
+func ReadIDfile(inFile string) (rName []string) {
+	rName = make([]string, 0)
+	//file
+	file, err := os.Open(inFile)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	//load
+	br := bufio.NewReaderSize(file, 32768000)
+	for {
+		line, isPrefix, err1 := br.ReadLine()
+		if err1 != nil {
+			break
+		}
+		if isPrefix {
+			return
+		}
+		str := string(line)
+		elements := strings.Split(str, "\t")
+		value := Shift(&elements)
+		rName = append(rName, value)
+	}
+	return rName
+}
+
 func ReadFile(inFile string, rowName bool, colName bool) (dataR *mat64.Dense, rName []string, cName []string, err error) {
 	//init
 	lc, cc, _ := lcCount(inFile)
@@ -170,7 +196,7 @@ func lcCount(filename string) (lc int, cc int, err error) {
 	return lc, cc, nil
 }
 
-func WriteFile(outFile string, data *mat64.Dense) (err error) {
+func WriteFile(outFile string, data *mat64.Dense, name []string, isRowID bool) (err error) {
 	file, err := os.OpenFile(outFile, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		fmt.Println(err)
@@ -183,10 +209,14 @@ func WriteFile(outFile string, data *mat64.Dense) (err error) {
 	nRow, nCol := data.Caps()
 	var ele string
 	for i := 0; i < nRow; i++ {
-		ele = strconv.FormatFloat(data.At(i, 0), 'f', 10, 64)
+		if isRowID {
+			wr.WriteString(name[i])
+			wr.WriteString("\t")
+		}
+		ele = strconv.FormatFloat(data.At(i, 0), 'f', 6, 64)
 		wr.WriteString(ele)
 		for j := 1; j < nCol; j++ {
-			ele = strconv.FormatFloat(data.At(i, j), 'f', 10, 64)
+			ele = strconv.FormatFloat(data.At(i, j), 'f', 6, 64)
 			wr.WriteString("\t")
 			wr.WriteString(ele)
 		}
@@ -227,24 +257,24 @@ func WriteNetwork(outFile string, data *mat64.Dense, idxToId map[int]string) (er
 
 func WriteOutputFiles(isVerbose bool, resFolder string, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
 	oFile := "./" + resFolder + "/test.probMatrix.txt"
-	WriteFile(oFile, tsYhat)
+	WriteFile(oFile, tsYhat, nil, false)
 	if isVerbose {
 		oFile = "./" + resFolder + "/cvTraining.measure.txt"
-		WriteFile(oFile, trainMeasure)
+		WriteFile(oFile, trainMeasure, nil, false)
 		oFile = "./" + resFolder + "/cvTesting.measure.txt"
-		WriteFile(oFile, testMeasure)
+		WriteFile(oFile, testMeasure, nil, false)
 		oFile = "./" + resFolder + "/posLabelRls.txt"
-		WriteFile(oFile, posLabelRls)
+		WriteFile(oFile, posLabelRls, nil, false)
 		oFile = "./" + resFolder + "/negLabelRls.txt"
-		WriteFile(oFile, negLabelRls)
+		WriteFile(oFile, negLabelRls, nil, false)
 		oFile = "./" + resFolder + "/thres.txt"
-		WriteFile(oFile, thres)
+		WriteFile(oFile, thres, nil, false)
 		oFile = "./" + resFolder + "/train.probMatrix.txt"
-		WriteFile(oFile, Yhat)
+		WriteFile(oFile, Yhat, nil, false)
 		oFile = "./" + resFolder + "/trainCalibrated.probMatrix.txt"
-		WriteFile(oFile, YhatCalibrated)
+		WriteFile(oFile, YhatCalibrated, nil, false)
 		oFile = "./" + resFolder + "/reorder.trMatrix.txt"
-		WriteFile(oFile, Ylabel)
+		WriteFile(oFile, Ylabel, nil, false)
 
 		//mem profile
 		memprofile := resFolder + "/mem.prof"
