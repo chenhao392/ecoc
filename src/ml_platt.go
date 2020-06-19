@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"github.com/wangjohn/quickselect"
-	//"gonum.org/v1/gonum/mat"
-	//"github.com/montanaflynn/stats"
-	//"os"
-	//"github.com/pa-m/sklearn/preprocessing"
+	"log"
 	"math"
 	"runtime"
 	"sort"
@@ -702,6 +699,11 @@ func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Den
 func MultiLabelRecalibrate(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
 	nRow, nCol := tsYhat.Caps()
 	tsYhatCal = mat64.NewDense(nRow, nCol, nil)
+	nTrainRow, _ := xTrain.Caps()
+	if kNN >= nTrainRow {
+		kNN = nTrainRow - 1
+		log.Print("number of nearest neighbors is less than all training instances. Reducing...")
+	}
 	wg.Add(nRow)
 	for i := 0; i < nRow; i++ {
 		go single_MultiLabelRecalibrate(kNN, i, nCol, tsYhatCal, tsYhat, xTest, xTrain, yPlattTrain, yPredTrain, posLabelRls, negLabelRls, wg, mutex)
@@ -750,9 +752,6 @@ func (a ByValue) Less(i, j int) bool { return a[i].Value < a[j].Value }
 func DistanceTopK(k int, rowIdx int, tsYhat *mat64.Dense, yProbTrain *mat64.Dense) (idxArr []int) {
 
 	var selectDis ByValue
-	//maxDis := 0.0
-	//disArr = make([]float64, 0)
-	//disAll := make([]float64, 0)
 	nRow, nCol := yProbTrain.Caps()
 	//a and b init out for better mem efficient
 	a := 0.0
@@ -764,26 +763,10 @@ func DistanceTopK(k int, rowIdx int, tsYhat *mat64.Dense, yProbTrain *mat64.Dens
 			a = tsYhat.At(rowIdx, j)
 			b = yProbTrain.At(i, j)
 			dis = dis + 1.0 - (1.0+math.Min(a, b))/(1.0+math.Max(a, b))
-			//dis += math.Sqrt(math.Pow(tsYhat.At(rowIdx, j)-yProbTrain.At(i, j), 2))
 		}
 		selectDis = append(selectDis, kv{i, dis})
-		//disAll = append(disAll, dis)
 	}
-	//sort.Slice(sortDis, func(i, j int) bool {
-	//	return sortDis[i].Value < sortDis[j].Value
-	//})
 	quickselect.QuickSelect(ByValue(selectDis), k)
-	//fix for 0 in disAll[i] and maxDis as zero, thus empty return array errors
-	//maxDis = sortDis[k-1].Value
-	//tick := 0
-	//for i := 0; i < nRow; i++ {
-	//	if disAll[i] <= maxDis && tick < k {
-	//      //disArr = append(disArr, maxDis/disAll[i])
-	//		disArr = append(disArr, 1.0)
-	//		idxArr = append(idxArr, i)
-	//		tick += 1
-	//	}
-	//}
 	//disArr normalized by maxDis
 	for i := 0; i < k; i++ {
 		idxArr = append(idxArr, selectDis[i].Key)

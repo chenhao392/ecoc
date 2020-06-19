@@ -43,7 +43,7 @@ network enhancement for a network.
   Sample usage:
   ecoc neten --i net1.txt --o net1enhanced.txt`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
+		if !cmd.Flags().Changed("i") {
 			cmd.Help()
 			os.Exit(0)
 		}

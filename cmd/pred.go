@@ -67,10 +67,10 @@ var predCmd = &cobra.Command{
     with a label, the corresponding cell is filled with 1, otherwise 0. 
 
  Sample usages:
-   ecoc pred -trY trMatrix.txt -tsY tsMatrix.txt \
-             -n net1.txt,net2.txt -nFold 5 -t 48`,
+   ecoc pred --trY trMatrix.txt --tsY tsMatrix.txt \
+             --n net1.txt,net2.txt --nFold 2 -t 4`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
+		if !cmd.Flags().Changed("trY") {
 			cmd.Help()
 			os.Exit(0)
 		}
@@ -95,7 +95,9 @@ var predCmd = &cobra.Command{
 		priorMatrixFiles := ""
 
 		//result dir and logging
-		src.Init(resFolder)
+		logFile := src.Init(resFolder)
+		defer logFile.Close()
+		log.SetOutput(logFile)
 
 		//program start
 		log.Print("Program started.")
@@ -166,10 +168,10 @@ func init() {
 	predCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor multiabel probability calibration\n")
 	predCmd.Flags().Float64("l", 1.0, "lamda balancing bernoulli and gaussian potentials\n")
 	predCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")
-	predCmd.Flags().Int("nFold", 5, "number of folds for cross validation\n")
+	predCmd.Flags().Int("nFold", 2, "number of folds for cross validation\n")
 	predCmd.Flags().Bool("r", false, "experimental regularized CCA\n(default false)")
 	predCmd.Flags().String("res", "result", "result folder")
-	predCmd.Flags().Int("t", 48, "number of threads")
+	predCmd.Flags().Int("t", 4, "number of threads")
 	predCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
 	predCmd.Flags().String("tsY", "data/tsMatrix.txt", "test label matrix")
 	predCmd.Flags().Bool("v", false, "verbose outputs")

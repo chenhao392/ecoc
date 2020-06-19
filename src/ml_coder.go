@@ -109,7 +109,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	tsY_C := mat64.NewDense(nTs, nLabel, nil)
 	sigma := mat64.NewDense(1, nLabel, nil)
 	//for workers
-	randValues := RandListFromUniDist(nTr)
+	randValues := RandListFromUniDist(nTr, nFea)
 	idxPerm := rand.Perm(nTr)
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
@@ -395,9 +395,12 @@ func deltaLossCal(Y *mat64.Dense, products *mat64.Dense, lamda float64, weights 
 	return deltaLoss
 }
 
-func RandListFromUniDist(length int) (values []float64) {
+func RandListFromUniDist(length int, length2 int) (values []float64) {
 	var UformDist = distuv.Uniform{Min: -0.00000001, Max: 0.00000001}
-	for k := 0; k < length; k++ {
+	if length < length2 {
+		length = length2
+	}
+	for k := 0; k <= length; k++ {
 		value := UformDist.Rand()
 		values = append(values, value)
 	}

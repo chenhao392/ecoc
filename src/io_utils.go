@@ -292,7 +292,7 @@ func WriteOutputFiles(isVerbose bool, resFolder string, trainMeasure *mat64.Dens
 
 }
 
-func Init(resFolder string) {
+func Init(resFolder string) (logFIle *os.File) {
 	err := os.MkdirAll("./"+resFolder, 0755)
 	if err != nil {
 		fmt.Println(err)
@@ -302,6 +302,5 @@ func Init(resFolder string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer logFile.Close()
-	log.SetOutput(logFile)
+	return logFile
 }

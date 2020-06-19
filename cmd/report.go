@@ -44,7 +44,7 @@ Calculate per label benchmark scores.
   Sample usages:
   ecoc report --tsY tsMatrix.txt --i pred.matrix.txt --s thres.txt`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
+		if !cmd.Flags().Changed("tsY") {
 			cmd.Help()
 			os.Exit(0)
 		}

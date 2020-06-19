@@ -38,12 +38,12 @@ var tuneCmd = &cobra.Command{
 	Use:   "tune",
 	Short: "hyperparameter tuning and benchmarking",
 	Long: `
-	  ______ _____ ____   _____   _______ _    _ _   _ ______ 
-	 |  ____/ ____/ __ \ / ____| |__   __| |  | | \ | |  ____|
-	 | |__ | |   | |  | | |         | |  | |  | |  \| | |__   
-	 |  __|| |   | |  | | |         | |  | |  | | . \ |  __|  
-	 | |___| |___| |__| | |____     | |  | |__| | |\  | |____ 
-	 |______\_____\____/ \_____|    |_|   \____/|_| \_|______|
+  ______ _____ ____   _____   _______ _    _ _   _ ______ 
+ |  ____/ ____/ __ \ / ____| |__   __| |  | | \ | |  ____|
+ | |__ | |   | |  | | |         | |  | |  | |  \| | |__   
+ |  __|| |   | |  | | |         | |  | |  | | . \ |  __|  
+ | |___| |___| |__| | |____     | |  | |__| | |\  | |____ 
+ |______\_____\____/ \_____|    |_|   \____/|_| \_|______|
 		                                                             
 		                                                             
 Hyperparameter tuning and benchmarking for the following parameters.
@@ -65,10 +65,14 @@ Hyperparameter tuning and benchmarking for the following parameters.
     with a label, the corresponding cell is filled with 1, otherwise 0. 
 
  Sample usages:
-   ecoc tune -trY trMatrix.txt -tsY tsMatrix.txt \
-             -n net1.txt,net2.txt -nFold 5 -t 48`,
+   ecoc tune --trY trMatrix.txt --tsY tsMatrix.txt \
+             --n net1.txt,net2.txt --nFold 2 --t 4`,
 
 	Run: func(cmd *cobra.Command, args []string) {
+		if !cmd.Flags().Changed("trY") {
+			cmd.Help()
+			os.Exit(0)
+		}
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
@@ -90,7 +94,9 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		fBetaThres := 1.0
 
 		//result dir and logging
-		src.Init(resFolder)
+		logFile := src.Init(resFolder)
+		defer logFile.Close()
+		log.SetOutput(logFile)
 
 		//program start
 		log.Print("Program started.")
@@ -162,10 +168,10 @@ func init() {
 	tuneCmd.Flags().Bool("isFirstLabel", false, "training objection as the aupr of first label/column\n(default false)")
 	tuneCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor multiabel probability calibration\n")
 	tuneCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")
-	tuneCmd.Flags().Int("nFold", 5, "number of folds for cross validation\n")
+	tuneCmd.Flags().Int("nFold", 2, "number of folds for cross validation\n")
 	tuneCmd.Flags().Bool("r", false, "experimental regularized CCA\n(default false)")
 	tuneCmd.Flags().String("res", "result", "result folder")
-	tuneCmd.Flags().Int("t", 48, "number of threads")
+	tuneCmd.Flags().Int("t", 4, "number of threads")
 	tuneCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
 	tuneCmd.Flags().String("tsY", "data/tsMatrix.txt", "test label matrix")
 	tuneCmd.Flags().Bool("v", false, "verbose outputs")

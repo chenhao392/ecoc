@@ -47,7 +47,7 @@ gene ID and each column is one feature, without column headers.
  ecoc pcc --i trMatrix.txt --o pcc.txt`,
 
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
+		if !cmd.Flags().Changed("i") {
 			cmd.Help()
 			os.Exit(0)
 		}

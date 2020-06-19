@@ -972,9 +972,6 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	tnSet := make([]int, 0)
 	macroAuprSet := make([]float64, 0)
 	microF1Set := make([]float64, 0)
-	//tsYhat = Zscore(tsYhat)
-	//tsYhat = ColScale(tsYhat, rebaData)
-	//tsYhat = RescaleData(tsYhat, thresData)
 	//macroAupr
 	for i := 0; i < nLabel; i++ {
 		aupr, _, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1.0)
@@ -986,7 +983,12 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	}
 	macroAupr = sumAupr / float64(nLabel)
 	//top k precision
-	kPrec = TopKprec(tsYdata, tsYhat, 10)
+	nPrecCut := 10
+	nRow, _ := tsYdata.Caps()
+	if nPrecCut > nRow {
+		nPrecCut = nRow - 1
+	}
+	kPrec = TopKprec(tsYdata, tsYhat, nPrecCut)
 	//accuracy
 	//tmp, one thing at a time
 	//tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)

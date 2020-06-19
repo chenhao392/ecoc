@@ -61,11 +61,11 @@ Propagating a set of labels on networks.
     with a label, the corresponding cell is filled with 1, otherwise 0. 
 
   Sample usages:
-     ecoc prop -trY trMatrix.txt -tsGene tsMatrix.txt \
-	 -n net1.txt,net2.txt -nFold 5 -t 48
+     ecoc prop --trY trMatrix.txt --tsGene tsMatrix.txt \
+	 --n net1.txt,net2.txt --t 4
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
+		if !cmd.Flags().Changed("trY") {
 			cmd.Help()
 			os.Exit(0)
 		}
@@ -84,7 +84,10 @@ Propagating a set of labels on networks.
 		rand.Seed(1)
 		runtime.GOMAXPROCS(threads)
 		//result dir and logging
-		src.Init(resFolder)
+		logFile := src.Init(resFolder)
+		defer logFile.Close()
+		log.SetOutput(logFile)
+
 		//program start
 		log.Print("Program started.")
 		//read data
@@ -138,7 +141,7 @@ func init() {
 	propCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)")
 	//propCmd.Flags().String("p", "", "addtional prior file, use together with addPrior flag")
 	propCmd.Flags().String("res", "result", "result folder")
-	propCmd.Flags().Int("t", 48, "number of threads")
+	propCmd.Flags().Int("t", 4, "number of threads")
 	propCmd.Flags().String("tsGene", "data/tsMatrix.txt", "additional genes to propagate values.")
 	propCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
 }
