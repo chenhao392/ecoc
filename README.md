@@ -1,6 +1,5 @@
 
-**Given a set of co-functioning genes, predict their additional functional mem-
-bers.**
+**Given a set of co-functioning genes, predict their additional functional members.**
 
 > Following the “Guilt By Association” principle, co-fucntioning genes may be co-evolving across multiple species and co-express at the same tissue type and etc. These gene-gene associations are considered as biological association networks. This project uses label propagation algorithm and ***error correction of code*** ( a multi-label learning framework) to model the focused functional label and its relationship with other labels, and then assign function label to genes.
 
