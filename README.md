@@ -1,22 +1,20 @@
-ECOC following "Guilt by association principle"
 
-This is an semi-supervised multi-label learning toolbox using "Error Correction of Code" ensemble framework.
-Following "Guilt by association" principle. Many prior information can be integrated, such as the followings.
+**Given a set of co-functioning genes, predict their additional functional mem-
+bers.**
 
-* phylogenetic profiles across species
-* expression profiles across tissue types
-* GO semantic similarities in one species corpus
-* protein-protein interactions
-* genetic interactions
-* positive selection pressure across closely related species
+> Following the “Guilt By Association” principle, co-fucntioning genes may be co-evolving across multiple species and co-express at the same tissue type and etc. These gene-gene associations are considered as biological association networks. This project uses label propagation algorithm and ***error correction of code*** ( a multi-label learning framework) to model the focused functional label and its relationship with other labels, and then assign function label to genes.
 
-The toolbox is written in Golang and Cobra with the following sub-commands.
+This packages is implemented using Golang and Cobra, aiming for a straightforwards toolset for gene function prediction with custimized datasets. Though it is mainly for model tuning and predict additional genes of a certaion function, it also contains functionalities that may be used for other purpose, such as network enhancement algorithm in Wang et al. and fast large-scale Pearson correlation coefficient calculation. Specifically, **It contains the following sub-commands.**
 
-* cals
-  * fast pearson correlation coefficient calculation for large matrix.
-* tune
-  * automatic hyper-parameter tuning and testing.
-* pred
-  * predict labels for a feature dataset with given hyper-parameters.
-* report
-  * print prediction result in detail.
+ - neten     
+	 - network enhancement
+ - pcc
+	 - fast Pearson correlation coefficient calculation
+ -  pred
+	 - prediction with specific hyperparameters
+ -  prop
+	 - multi-label propagation
+ - report
+	 - calculate per label benchmark scores
+ - tune
+	 - hyperparameter tuning and benchmarking
