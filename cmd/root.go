@@ -42,7 +42,15 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "ecoc",
 	Short: "Error Correction Of Code for label prediction",
-	Long:  `Label encoding and decoding process with error correction.`,
+	Long: `
+  ______ _____ ____   _____ 
+ |  ____/ ____/ __ \ / ____|
+ | |__ | |   | |  | | |     
+ |  __|| |   | |  | | |     
+ | |___| |___| |__| | |____ 
+ |______\_____\____/ \_____|
+
+ Encoding and decoding label set with error correction.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

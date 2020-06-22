@@ -36,7 +36,7 @@ import (
 // tuneCmd represents the tune command
 var tuneCmd = &cobra.Command{
 	Use:   "tune",
-	Short: "hyperparameter tuning and benchmarking",
+	Short: "hyperparameter tuning and automatic prediction",
 	Long: `
   ______ _____ ____   _____   _______ _    _ _   _ ______ 
  |  ____/ ____/ __ \ / ____| |__   __| |  | | \ | |  ____|

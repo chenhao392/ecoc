@@ -30,7 +30,7 @@ import (
 // reportCmd represents the report command
 var reportCmd = &cobra.Command{
 	Use:   "report",
-	Short: "Calculate per label benchmark scores",
+	Short: "calculate benchmark scores",
 	Long: `
 
   ______ _____ ____   _____   _____  ______ _____   ____  _____ _______ 

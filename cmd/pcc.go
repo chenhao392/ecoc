@@ -30,7 +30,7 @@ import (
 // pccCmd represents the pcc command
 var pccCmd = &cobra.Command{
 	Use:   "pcc",
-	Short: "Fast Pearson correlation coefficient calculation",
+	Short: "fast correlation calculation",
 	Long: `
   ______ _____ ____   _____   _____   _____ _____ 
  |  ____/ ____/ __ \ / ____| |  __ \ / ____/ ____|
