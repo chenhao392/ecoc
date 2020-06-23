@@ -1,1 +1,4 @@
 theme: jekyll-theme-architect
+title: ECOC
+description: predict associated genes with multi-label learning and biological networks
+show_downloads: true
