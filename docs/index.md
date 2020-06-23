@@ -1,11 +1,11 @@
 
 
 # Introduction
-We work on gene function prediction problems by focusing on a typical scenario in functional or disease-associated gene screening projects. **Given a set of co-functioning genes, predict their additional functional members.**
+We work on gene function prediction problems by focusing on a typical scenario in functional or disease-associated gene screening projects. **Given a set of associated genes, predict their additional members.**
 
 > Following the “Guilt By Association” principle, these genes may be physically and genetically interact with each other,  co-evolving across multiple species and co-express at the same tissue type and etc. These gene-gene associations are considered as biological association networks. This project uses the label propagation algorithm and ***error correction of code*** ( a multi-label learning framework) to model a focused function and its relationship with other labels. After training,  the model will assign these functional labels to new genes.
 
-This package is implemented using Golang and Cobra, aiming for a user friendly toolset for gene function prediction problem. Though it is mainly built for model tuning and gene function prediction, it also supports functionalities that are useful for other purposes, such as network enhancement algorithm in Wang *et al.* and fast large-scale Pearson correlation coefficient calculation. With Cobra, they are organized into ***the following sub-commands.***
+This package is implemented using Golang and Cobra, aiming for a user-friendly toolset for gene function prediction problem. Though it is mainly built for model tuning and gene function prediction, it also supports functionalities that are useful for other purposes, such as network enhancement algorithm in Wang *et al.* and fast large-scale Pearson correlation coefficient calculation. With Cobra, they are organized into ***the following sub-commands.***
 
  - **neten**     
 	 - ***network enhancement***. A GO implementation for the network enhancement algorithm in Wang *et al.*, all default parameters. The algorithm enhances a network's local structure and removes noise. 
@@ -21,7 +21,9 @@ This package is implemented using Golang and Cobra, aiming for a user friendly t
 	 - ***calculate benchmark scores***. With predicted label probabilities and ground truth label matrix, calculated accuracy, microF1, micro/macro area under the Precision-Recall curve as benchmark scores.
 
 # Installation
-For most of the users, please download the pre-compiled binary files from the [release](https://github.com/chenhao392/ecoc/releases). If you'd like to build from source, you can download the source files and compile in a [GO](https://golang.org/doc/install) environment. Please note that the [liblinear](https://www.csie.ntu.edu.tw/~cjlin/liblinear/) package from Lin's group must also be installed.<details> <summary>Click here for guide for compile and config.</summary>
+For most of the users, please download the pre-compiled binary files from the [release](https://github.com/chenhao392/ecoc/releases). If you'd like to build from source, you can download the source files and compile in a [GO](https://golang.org/doc/install) environment. Please note that the [liblinear](https://www.csie.ntu.edu.tw/~cjlin/liblinear/) package from Lin's group must also be installed.
+
+<details> <summary>Click here for guide for compile and config.</summary>
  
 ```
 # instll liblinear
@@ -42,8 +44,7 @@ export LD_LIBRARY_PATH="/path/to/liblinear-2.30:$LD_LIBRARY_PATH"
 export LIBRARY_PATH="/path/to/liblinear-2.30:$LIBRARY_PATH"
 export C_INCLUDE_PATH="/path/to/liblinear-2.30:$C_INCLUDE_PATH"
 ```
-</details>
-
+ 
 ```
 # compile ecoc from source
 git init
@@ -52,11 +53,20 @@ go build
 ```
 # Features
 
- ### Multi-label framework modeling netowork data
+ ### Multi-label modeling
+The model learns a latent structure that maximizes the correlations between a set of associated labels and their propagated scores on networks. If a structure is successfully learned,  it can be used to decode the propagated scores back to labels for genes, assigning labels to genes that were not annotated.  Please read the case study for predicting piRNA pathway genes in D. melanogaster for demo.
+  
  ### Second-order iterative stratification 
- ### Platt's scaling for probability distribution
+To better preserve the label relationship in a subset,  especially for the imbalanced gene function labels, a second-order iterative stratification (SOIS) procedure is implemented in this model for stratifying datasets (Szymański and Kajdanowicz, 2017; Sechidis et al., 2011). This SOIS procedure iteratively distributes the most demanding multi-label genes each time to a subset. 
+
+ ### Platt's scaling for probability calibration
+Transferring the output scores of a classifier to reliable probabilities is also not a trivial task, as machine learning methods tend to produce skewed probability distributions. A modified version of Platt’s scaling is implemented, according to the pseudocode from Hsuan-Tien Lin et al. Platt’s scaling is a simple probability calibration method that uses logistic regression to calibrate the probabilities, using known positive and negative labels in training (Platt, 1999).
+
  ### Tolerenting missing positive labels
+Missing positive labels in the training dataset may confuse the training process. In this package, a further modification to estimate and remove a fraction of top scores before Platt’s scaling is used, which alleviates the effect of high probabilities assigned to false-negative genes in calibration (Rüping, 2006).
+
  ### Goroutines for scalable computing
+  The package supports multi goroutines/threads for both the multi-label multi-network propagations and the expensive mean-field approximation step in decoding the network propagated values back to gene labels. 
 
 # Common problems
 
