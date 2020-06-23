@@ -21,10 +21,11 @@ This package is implemented using Golang and Cobra, aiming for a user-friendly t
 	 - ***calculate benchmark scores***. With predicted label probabilities and ground truth label matrix, calculated accuracy, microF1, micro/macro area under the Precision-Recall curve as benchmark scores.
 
 # Installation
-For most of the users, please download the pre-compiled binary files from the [release](https://github.com/chenhao392/ecoc/releases). If you'd like to build from source, you can download the source files and compile in a [GO](https://golang.org/doc/install) environment. Please note that the [liblinear](https://www.csie.ntu.edu.tw/~cjlin/liblinear/) package from Lin's group must also be installed.
+For most of the users, please download the pre-compiled binary files from the [release](https://github.com/chenhao392/ecoc/releases) and install the [liblinear](https://www.csie.ntu.edu.tw/~cjlin/liblinear/) package. If you'd like to build from source, you can download the source files and compile in a [GO](https://golang.org/doc/install) environment.
 
-<details> <summary>Click here for guide for compiling liblinear and config.</summary>
-
+<details> 
+<summary>Click here for guide for compiling liblinear and config.</summary>
+ 
 ```
 # instll liblinear
 tar -xf liblinear-2.30.tar.gz
