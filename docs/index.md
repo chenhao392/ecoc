@@ -23,8 +23,7 @@ This package is implemented using Golang and Cobra, aiming for a user-friendly t
 # Installation
 For most of the users, please download the pre-compiled binary files from the [release](https://github.com/chenhao392/ecoc/releases) and install the [liblinear](https://www.csie.ntu.edu.tw/~cjlin/liblinear/) package. If you'd like to build from source, you can download the source files and compile in a [GO](https://golang.org/doc/install) environment.
 
-<details> 
-<summary>Click here for guide for compiling liblinear and config.</summary>
+### compiling liblinear and config
  
 ```
 # instll liblinear
@@ -46,8 +45,8 @@ export LIBRARY_PATH="/path/to/liblinear-2.30:$LIBRARY_PATH"
 export C_INCLUDE_PATH="/path/to/liblinear-2.30:$C_INCLUDE_PATH"
 ```
 
-</details>
- 
+### compile ecoc from source
+
 ```
 # compile ecoc from source
 git init
