@@ -26,7 +26,7 @@ For most of the users, please download the pre-compiled binary files from the [r
 ### compiling liblinear and config
  
 ```
-# instll liblinear
+# install liblinear
 tar -xf liblinear-2.30.tar.gz
 cd liblinear-2.30
 make lib
@@ -88,7 +88,7 @@ Abort trap: 6
 ```
 ***Solution***: the liblinear package is either not installed or not properly configured. Please see installation for examplary configrations in Ubuntu and Mac machines. 
 
- ***Missing liblinear shared library and head files for compiling from sounrce.*** 
+ ***Missing liblinear shared library and head files for compiling from source.*** 
  I downloaded the source files and tried to compile it. But it complains that it cannot find -llinear or linear.h. 
 ```
 # missing shared library
