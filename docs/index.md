@@ -56,7 +56,7 @@ go build
 # Features
 
 ### Multi-label modeling
-The model learns a latent structure that maximizes the correlations between a set of associated labels and their propagated scores on networks. If a structure is successfully learned,  it can be used to decode the propagated scores back to labels for genes, assigning labels to genes that were not annotated.  Please read the case study for predicting piRNA pathway genes in D. melanogaster for demo.
+The model learns a latent structure that maximizes the correlations between a set of associated labels and their propagated scores on networks. If a structure is successfully learned,  it can be used to decode the propagated scores back to labels for genes, assigning labels to genes that were not annotated.  Please read the case study for predicting piRNA pathway genes in D. melanogaster for [demo](https://chenhao392.github.io/ecoc/demo1.html).
   
 ### Second-order iterative stratification 
 To better preserve the label relationship in a subset,  especially for the imbalanced gene function labels, a second-order iterative stratification (SOIS) procedure is implemented in this model for stratifying datasets (Szymański and Kajdanowicz, 2017; Sechidis et al., 2011). This SOIS procedure iteratively distributes the most demanding multi-label genes each time to a subset. 
