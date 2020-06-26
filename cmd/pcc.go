@@ -52,7 +52,7 @@ gene ID and each column is one feature, without column headers.
 			os.Exit(0)
 		}
 		inFile, _ := cmd.Flags().GetString("i")
-		outFile, _ := cmd.Flags().GetString("0")
+		outFile, _ := cmd.Flags().GetString("o")
 		threads, _ := cmd.Flags().GetInt("t")
 		isColumn, _ := cmd.Flags().GetBool("c")
 		data := mat64.NewDense(0, 0, nil)
