@@ -1,4 +1,8 @@
-## Demo for ECOC: piRNA pathway gene prediction
+---
+layout: default
+---
+
+##  piRNA pathway gene prediction
 piRNA pathway is known to function in germline cells. In this demo, we will predict its additional functional components in *D. melanogaster*'s ovary, by integrating [stringDb](https://string-db.org/cgi/input.pl) association networks with a recently published [single-cell RNAseq dataset](https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.3000538). To build a suitable multi-label matrix for this demo,  We'll use [g: profiler](https://biit.cs.ut.ee/gprofiler/gost) for piRNA pathway genes' GO term enrichment analysis. All scripts and data are summarized in this [github repository](https://github.com/chenhao392/ecocDemo).  
 
 ### Building up context-specific networks
@@ -16,7 +20,7 @@ perl scripts/matrix2pair.pl \
     data/pcc.cellByGermGene.idMapped.txt \
     0.5 >data/pairs.cellByGermGene.txt
 ```
- As a sanity check, a boxplot for the known piRNA pathway genes also indicates that they are mostly enriched in germline cluster 1. Using a 0.1 average expression cut-off, we can remove the network genes that are not expressed in this group,while preserving most piRNA pathway genes. The following script prunes networks to context-specific ones for piRNA gene prediction. 
+ As a sanity check, a boxplot for the known piRNA pathway genes also indicates that they are mostly enriched in germline cluster 1. ![](../assets/images/top10celltypeExpresionPiRNAGenes.jpg) Using a 0.1 average expression cut-off, we can remove the network genes that are not expressed in this group,while preserving most piRNA pathway genes. The following script prunes networks to context-specific ones for piRNA gene prediction. 
 ```
 sh step1.2.ovaryCoExpressionNetwork.sh
 ```

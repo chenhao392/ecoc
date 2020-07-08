@@ -1,4 +1,6 @@
-
+---
+layout: default
+---
 
 # Introduction
 We work on gene function prediction problems by focusing on a typical scenario in functional or disease-associated gene screening projects. **Given a set of associated genes, predict their additional members.**
@@ -23,7 +25,7 @@ This package is implemented using Golang and Cobra, aiming for a user-friendly t
 # Installation
 For most of the users, please download the pre-compiled binary files from the [release](https://github.com/chenhao392/ecoc/releases) and install the [liblinear](https://www.csie.ntu.edu.tw/~cjlin/liblinear/) package. If you'd like to build from source, you can download the source files and compile in a [GO](https://golang.org/doc/install) environment.
 
-### compiling liblinear and config
+## compiling liblinear and config
  
 ```
 # install liblinear
@@ -45,7 +47,7 @@ export LIBRARY_PATH="/path/to/liblinear-2.30:$LIBRARY_PATH"
 export C_INCLUDE_PATH="/path/to/liblinear-2.30:$C_INCLUDE_PATH"
 ```
 
-### compile ecoc from source
+## compile ecoc from source
 
 ```
 # compile ecoc from source
@@ -55,19 +57,19 @@ go build
 ```
 # Features
 
-### Multi-label modeling
-The model learns a latent structure that maximizes the correlations between a set of associated labels and their propagated scores on networks. If a structure is successfully learned,  it can be used to decode the propagated scores back to labels for genes, assigning labels to genes that were not annotated.  Please read the case study for predicting piRNA pathway genes in D. melanogaster for [demo](https://chenhao392.github.io/ecoc/demo1.html).
+## Multi-label modeling
+The model learns a latent structure that maximizes the correlations between a set of associated labels and their propagated scores on networks. If a structure is successfully learned,  it can be used to decode the propagated scores back to labels for genes, assigning labels to genes that were not annotated.  Please read the case study for predicting piRNA pathway genes in D. melanogaster for [demo](./demo1.html).
   
-### Second-order iterative stratification 
+## Second-order iterative stratification 
 To better preserve the label relationship in a subset,  especially for the imbalanced gene function labels, a second-order iterative stratification (SOIS) procedure is implemented in this model for stratifying datasets (Szymański and Kajdanowicz, 2017; Sechidis et al., 2011). This SOIS procedure iteratively distributes the most demanding multi-label genes each time to a subset. 
 
-### Platt's scaling for probability calibration
+## Platt's scaling for probability calibration
 Transferring the output scores of a classifier to reliable probabilities is also not a trivial task, as machine learning methods tend to produce skewed probability distributions. A modified version of Platt’s scaling is implemented, according to the pseudocode from Hsuan-Tien Lin et al. Platt’s scaling is a simple probability calibration method that uses logistic regression to calibrate the probabilities, using known positive and negative labels in training (Platt, 1999).
 
-### Tolerenting missing positive labels
+## Tolerenting missing positive labels
 Missing positive labels in the training dataset may confuse the training process. In this package, a further modification to estimate and remove a fraction of top scores before Platt’s scaling is used, which alleviates the effect of high probabilities assigned to false-negative genes in calibration (Rüping, 2006).
 
-### Goroutines for scalable computing
+## Goroutines for scalable computing
 The package supports multi goroutines/threads for both the multi-label multi-network propagations and the expensive mean-field approximation step in decoding the network propagated values back to gene labels. 
 
 # Common problems
