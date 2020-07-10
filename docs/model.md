@@ -7,12 +7,13 @@ Trained using known label genes and biological networks, this model learns a lat
 2. aggregate the propagation results into an "error correction of code" data matrix;
 3. learn a latent structure by combining linear classifiers for each label and *Gaussian* regressions models for label dependencies;
 4. predict labels for any genes in the data matrix.
+
 In addition, hyperparameters and two heuristics that subset the training data while preserving label dependencies and calibrate the label probabilities are also described in this page.
 
 ## Multi-label space and network
 Let's start by defining the label space and networks. For $$q$$ known labels and $$p$$ genes, the gene labels can be expressed in both matrix and graph forms, such as the following toy example for two labels (red and blue). 
 
-![](../assets/images/ecocModel1_large.jpg)
+![](./images/ecocModel1_large.jpg)
 
 On the figure's left side, this label space is expressed as a binary matrix $$Y$$, where each $$y_{j}$$ is a $$p$$ element column vector filled with 1(colored) and 0(empty), denoting whether a gene is labeled or not.
 
@@ -40,7 +41,7 @@ Usually, in practice, we can only find a subset of these $$p$$  genes in a netwo
 ## Label propagation on a network
 The algorithm starts by propagating the mapped label matrix $$Y'$$ on the edge weight normalized networks, such as $$G$$. Initially, all labeled genes in the network are assigned with value 1. These values are then propagated from the starting genes (such as $$g2$$) to their neighbor genes (such as $$g1,g3$$ and $$g4$$). 
 
-![](../assets/images/ecocModel2_large.jpg)
+![](./images/ecocModel2_large.jpg)
 
 
 In this implementation, a parameter $$a$$ controls the additionally infused label values from starting genes. Thus, this is also called a "Random Walk with Restart" process. Specifically,  $$\left(1-a\right)\cdot y'_j$$ additional label values are injected into the network at each iteration for each label $$j$$. The following equation summarized this iteration process for updating a gene $$v$$'s label value for label $$j$$.
@@ -57,7 +58,7 @@ Here,  $$w'(v,u)$$  is from $$W'$$ that denotes edge weight between gene $$u$$ a
 ## Multi-label propagation on networks 
 Following the concept of "error correction of code", the decoding error can be reduced in principle by repeatedly encoding each label $$n$$ times from different biological perspectives. To obtain the encoded repetitive codewords as data matrix $$X$$, this algorithm propagates each of the labels in $$Y$$ on $$n$$ diverse biological networks and stacks these values together.
 
-![](../assets/images/ecocModel3_large.jpg)
+![](./images/ecocModel3_large.jpg)
 \begin{equation}
 X=\left(x_{1},x_{2},...,x_{q\centerdot n}\right)
 \end{equation}
@@ -73,7 +74,7 @@ Using the propagated value matrix $$X$$ and label matrix $$Y$$, this algorithm l
 Z= (Y,V^TY)
 \end{equation}
 
-![](../assets/images/ecocModel4_large.jpg)
+![](./images/ecocModel4_large.jpg)
 
 
 Here, the label matrix $$Y=(y_{1~},y_{2}\text{, ... , }y_{q} )$$ represents the $$q$$ labels.  And the $$V^TY$$ term denotes the most predictable label combination using feature matrix $$X$$, so that the projection $$V$$ mainly captures the conditional label dependency given $$X$$ and its projection $$U$$. The two projections are estimated with Canonical Correlation Analysis (CCA), which maximizes the correlations between the codewords $$Y$$ and the data matrix $$X$$.
@@ -81,7 +82,7 @@ Here, the label matrix $$Y=(y_{1~},y_{2}\text{, ... , }y_{q} )$$ represents the 
 ## Encoding and decoding
 With the defined codeword matrix $$Z$$ and encoded repetitive codes as data matrix $$X$$, the algorithm can estimate the parameters for the latent structure to encode and decode. The figure below shows this idea for the toy example. 
 
-![](../assets/images/ecocModel5_large.jpg)
+![](./images/ecocModel5_large.jpg)
 
 In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V_k^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g6$$ and $$g7$$ are avaialable for training the latent structure to predict 2 labels. The number of label dependency terms $$k$$ is a hyperparameter that is estimated by cross validation. 
 
@@ -144,4 +145,4 @@ Two hyperparameters are estimated in training, which are $$k$$ dependency terms 
 ## Gene label prediction
 The final step is to decode $$X$$ to a predicted label matrix $$Y^h$$, using the learned $$q$$ linear models and $$k$$ label dependency terms. In the toy example below, the repetitive codes for gene $$g1, g2, g6$$ and $$g7$$ are decoded to labels and their dependencies. 
 
-![](../assets/images/ecocModel6_large.jpg)
+![](./images/ecocModel6_large.jpg)
