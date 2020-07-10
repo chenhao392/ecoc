@@ -155,8 +155,5 @@ The final step is to decode $$X$$ to a predicted label matrix $$Y^h$$, using the
  -  Sechidis, K., Tsoumakas, G., and Vlahavas, I. (2011). On the stratification of multi-label data. Machine Learning and Knowledge Discovery in Databases. 
  - Szymański, P., and Kajdanowicz, T. (2017). A Network Perspective on Stratification of Multi-Label Data. In Proceedings of the First International Workshop on Learning with Imbalanced Domains: Theory and Applications. 
  - Vanunu, O., Magger, O.,  Ruppin, E., Shlomi, T., and Sharan, R. (2010). Associating genes and  protein complexes with disease via network propagation. PLoS computational biology. 
- - Zhang, Y. and Schneider, J. (2011). Multi-Label Output Codes using Canonical Correlation Analysis. In
-   Proceedings of the Fourteenth International Conference on Artificial  Intelligence and Statistics. 
- - Zou, Q., Xie, S., Lin, Z., Wu, M., and Ju, Y. (2016). Finding the Best Classification Threshold in
-   Imbalanced Classification. Big Data Research.
-
+ - Zhang, Y. and Schneider, J. (2011). Multi-Label Output Codes using Canonical Correlation Analysis. In Proceedings of the Fourteenth International Conference on Artificial  Intelligence and Statistics. 
+ - Zou, Q., Xie, S., Lin, Z., Wu, M., and Ju, Y. (2016). Finding the Best Classification Threshold in Imbalanced Classification. Big Data Research.
