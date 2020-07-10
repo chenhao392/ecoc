@@ -20,7 +20,7 @@ perl scripts/matrix2pair.pl \
     data/pcc.cellByGermGene.idMapped.txt \
     0.5 >data/pairs.cellByGermGene.txt
 ```
- As a sanity check, a boxplot for the known piRNA pathway genes also indicates that they are mostly enriched in germline cluster 1. ![](../assets/images/top10celltypeExpresionPiRNAGenes.jpg) Using a 0.1 average expression cut-off, we can remove the network genes that are not expressed in this group,while preserving most piRNA pathway genes. The following script prunes networks to context-specific ones for piRNA gene prediction. 
+ As a sanity check, a boxplot for the known piRNA pathway genes also indicates that they are mostly enriched in germline cluster 1. ![](/assets/images/top10celltypeExpresionPiRNAGenes.jpg) Using a 0.1 average expression cut-off, we can remove the network genes that are not expressed in this group,while preserving most piRNA pathway genes. The following script prunes networks to context-specific ones for piRNA gene prediction. 
 ```
 sh step1.2.ovaryCoExpressionNetwork.sh
 ```
