@@ -2,13 +2,13 @@
 layout: default
 ---
 # ECOC Model 
-Trained using known label genes and biological networks, this model learns a latent structure that predicts multiple labels for genes. It does so with 4 key components.
+Trained using known label genes and biological networks, this model learns a latent structure that predicts multiple labels for genes. It does so with four components.
 1. propagate each label on multiple networks;
 2. aggregate the propagation results into an "error correction of code" data matrix;
 3. learn a latent structure by combining linear classifiers for each label and *Gaussian* regressions models for label dependencies;
 4. predict labels for any genes in the data matrix.
 
-In addition, hyperparameters and two heuristics that subset the training data while preserving label dependencies and calibrate the label probabilities are also described in this page.
+Besides, the model's hyperparameters and two heuristics are also briefly explained after introducing these components. These heuristics improve data stratification in training, probability estimation, and robust threshold choice in practice. 
 
 ## Multi-label space and network
 Let's start by defining the label space and networks. For $$q$$ known labels and $$p$$ genes, the gene labels can be expressed in both matrix and graph forms, such as the following toy example for two labels (red and blue). 
@@ -39,7 +39,7 @@ Usually, in practice, we can only find a subset of these $$p$$  genes in a netwo
 
 
 ## Label propagation on a network
-The algorithm starts by propagating the mapped label matrix $$Y'$$ on the edge weight normalized networks, such as $$G$$. Initially, all labeled genes in the network are assigned with value 1. These values are then propagated from the starting genes (such as $$g2$$) to their neighbor genes (such as $$g1,g3$$ and $$g4$$). 
+Following Vanunu *et al.*, the algorithm starts by propagating the mapped label matrix $$Y'$$ on the edge weight normalized networks, such as $$G$$. Initially, all labeled genes in the network are assigned with value 1. These values are then propagated from the starting genes (such as $$g2$$) to their neighbor genes (such as $$g1,g3$$ and $$g4$$). 
 
 ![](/assets/images/ecocModel2_large.jpg)
 
@@ -55,7 +55,7 @@ F_j\left(v\right)=a\left[\sum_{u\in Neighbor\left(v\right)}F_j\left(u\right)w'\l
 Here,  $$w'(v,u)$$  is from $$W'$$ that denotes edge weight between gene $$u$$ and $$v$$. The algorithm continues this iterative process until the sum of label values changes drops below a threshold. 
 
   
-## Multi-label propagation on networks 
+## “Error correction of code” data matrix
 Following the concept of "error correction of code", the decoding error can be reduced in principle by repeatedly encoding each label $$n$$ times from different biological perspectives. To obtain the encoded repetitive codewords as data matrix $$X$$, this algorithm propagates each of the labels in $$Y$$ on $$n$$ diverse biological networks and stacks these values together.
 
 ![](/assets/images/ecocModel3_large.jpg)
@@ -67,7 +67,7 @@ In practice, different iteration steps and starting label density generates thes
 
 
 
-## Latent structure design
+## Latent coding structure
 Using the propagated value matrix $$X$$ and label matrix $$Y$$, this algorithm learns a latent structure consisting of $$q$$ labels and $$k$$ label dependency terms. Following Zhang *et al*, this structure is defined as a codeword matrix $$Z$$. 
 
 \begin{equation}
@@ -80,11 +80,11 @@ Z= (Y,V^TY)
 Here, the label matrix $$Y=(y_{1~},y_{2}\text{, ... , }y_{q} )$$ represents the $$q$$ labels.  And the $$V^TY$$ term denotes the most predictable label combination using feature matrix $$X$$, so that the projection $$V$$ mainly captures the conditional label dependency given $$X$$ and its projection $$U$$. The two projections are estimated with Canonical Correlation Analysis (CCA), which maximizes the correlations between the codewords $$Y$$ and the data matrix $$X$$.
 
 ## Encoding and decoding
-With the defined codeword matrix $$Z$$ and encoded repetitive codes as data matrix $$X$$, the algorithm can estimate the parameters for the latent structure to encode and decode. The figure below shows this idea for the toy example. 
+With the defined codeword matrix $$Z$$ and encoded repetitive codes as data matrix $$X$$, the algorithm can estimate the parameters for the latent coding structure to encode and decode. The figure below shows this process using 4 genes in the toy example. 
 
 ![](/assets/images/ecocModel5_large.jpg)
 
-In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V_k^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g6$$ and $$g7$$ are avaialable for training the latent structure to predict 2 labels. The number of label dependency terms $$k$$ is a hyperparameter that is estimated by cross validation. 
+In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V_k^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g6$$ and $$g7$$ are used to learn the latent structure of the 2 labels. The number of label dependency terms $$k$$ is a hyperparameter to be estimated by cross validation. 
 
 
 \begin{equation}
@@ -100,10 +100,10 @@ In encoding, a combination of linear and *Gaussian* regression models are used t
 In decoding, this model decodes $$X$$ to the codeword matrix $$Z$$, where the first $$q$$ columns are the probabilities for the $$q$$ labels. The joint probability $$P\left(y\right)$$ of labels for a row vector $$x^i$$ can be summarized as the following.
 
 \begin{equation}
-logP\left(y\right)=-logZ+\lambda\sum_{j=1}^{q}\log\phi_{j}\left(y\right)+\sum_{d=1}^{k}\log\psi_{d}\left(y\right)
+logP\left(y\right)=-logF+\lambda\sum_{j=1}^{q}\log\phi_{j}\left(y\right)+\sum_{d=1}^{k}\log\psi_{d}\left(y\right)
 \end{equation}
 
-Here, $$Z$$ is the partition function and $$\lambda$$ balances the two types of probabilities. Each of the linear classifier $$p_{j}\left(x\right)$$ predicts a Bernoulli distribution for a label $$y_{j}$$.
+Here, $$F$$ is the partition function and $$\lambda$$ balances the two types of probabilities. In the second term, each of the linear classifier $$p_{j}\left(x\right)$$ predicts a Bernoulli distribution for a label $$y_{j}$$.
 
 
 \begin{equation}
@@ -133,16 +133,30 @@ KL\left(Q(y)\vert P(y)\right)
 
 
 ## Second-order iterative stratification
- It is not trivial for dividing the training data to subsets in the context of gene function prediction algorithms, especially in a multi-label setting. Many of these labels are much less than the total number of genes in a species. With these small positive label ratio, random subsets can not preserve the same label dependencies as in the whole training data. This implementation uses a   **second-order iterative stratification** heuristic to distribute the positive labels while maintaining the label ratios close to the entire training set.   
+ It is not trivial for dividing the training data to subsets in the context of gene function prediction algorithms, especially in a multi-label setting. Many of these labels are much less than the total number of genes in a species. With these small positive label ratio, random subsets can not preserve the same label dependencies as in the whole training data. This implementation uses a   **second-order iterative stratification** heuristic (Szymański and Kajdanowicz, 2017; Sechidis et al., 2011) to distribute the positive labels while maintaining the label ratios close to the entire training set.   
 
 ## Probability calibration
-It is also not trivial to calibrate the raw probabilities estimated from the multi-label model, as it is often skewed. As a result, a little change in the probability threshold can dramatically change the prediction results. This implementation also estimates a threshold for each of the $$q$$ label prediction based on its harmonic mean of precision and recall. For a robust threshold in practice, a **modified Platt's scaling** heuristic is integrated into this model to calibrate the probabilities. The modification reduces the influence from false negatives. As many genes' labels are not known, it is easy to have false negatives in training data, which confuses this logistic regression based calibration process. Thus, the algorithm is modified to automatically remove a portion of top predictions before calibration, which is decided by mean squared error.
+This implementation automatically estimates $$q$$ thresholds for all labels' probabilities based on the harmonic mean of precision and recall (Fan and Lin, 2007; Zou et al.,2016). However, the raw probabilities estimated from this multi-label model is often skewed. As a result, a little change in the probability threshold can dramatically change the prediction outcome. Thus, a Platt's scaling heuristic (Lin et al.,2007; Platt, 1999) is integrated into this model to calibrate the probabilities for robust threshold estimations in practice. In addition, it is further modified to reduce the influence of false negatives (Rüping, 2006). As some genes' labels are still unknown, it is easy to come across false negatives in training data, which confuses this logistic regression based calibration process. This modification may remove a part of top predictions for a better estimation for calibration parameters, determined by the mean squared error in regression.
 
 ##  Hyperparameters
 Two hyperparameters are estimated in training, which are $$k$$ dependency terms and $$\lambda$$ that balance the linear classifier and the *Gaussian* regression models. The sub-command `ecoc tune` will automatically estimate them in training. They can also be specified directly in sub-command `ecoc pred`.
  
 
 ## Gene label prediction
-The final step is to decode $$X$$ to a predicted label matrix $$Y^h$$, using the learned $$q$$ linear models and $$k$$ label dependency terms. In the toy example below, the repetitive codes for gene $$g1, g2, g6$$ and $$g7$$ are decoded to labels and their dependencies. 
+The final step is to decode $$X$$ to a predicted label matrix $$Y^h$$, using the learned $$q$$ linear models and $$k$$ label dependency terms. In the toy example, the labels and repetitive codes for gene $$g3, g4, g5$$, and $$g8$$ are used for training the model. And gene $$g1, g2, g6$$, and $$g7$$ are decoded back to label probabilities. These are the label predictions for these four genes.  
 
 ![](/assets/images/ecocModel6_large.jpg)
+
+## References
+ - Fan, R.-E., and Lin, C.-J. (2007). A study on threshold selection for multi-label classification. Department of Computer Science, National Taiwan University. 
+ - Lin, H.-T., Lin, C.-J., and Weng, R. C. (2007). A note on Platt's probabilistic outputs for support vector machines. Machine Learning. 
+ - Platt, J. C. (1999). Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood  Methods. In ADVANCES IN LARGE MARGIN CLASSIFIERS. 
+ - Rüping, S. (2006). Robust Probabilistic Calibration. In Machine Learning: ECML 2006.
+ -  Sechidis, K., Tsoumakas, G., and Vlahavas, I. (2011). On the stratification of multi-label data. Machine Learning and Knowledge Discovery in Databases. 
+ - Szymański, P., and Kajdanowicz, T. (2017). A Network Perspective on Stratification of Multi-Label Data. In Proceedings of the First International Workshop on Learning with Imbalanced Domains: Theory and Applications. 
+ - Vanunu, O., Magger, O.,  Ruppin, E., Shlomi, T., and Sharan, R. (2010). Associating genes and  protein complexes with disease via network propagation. PLoS computational biology. 
+ - Zhang, Y. and Schneider, J. (2011). Multi-Label Output Codes using Canonical Correlation Analysis. In
+   Proceedings of the Fourteenth International Conference on Artificial  Intelligence and Statistics. 
+ - Zou, Q., Xie, S., Lin, Z., Wu, M., and Ju, Y. (2016). Finding the Best Classification Threshold in
+   Imbalanced Classification. Big Data Research.
+
