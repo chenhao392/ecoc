@@ -84,7 +84,7 @@ With the defined codeword matrix $$Z$$ and encoded repetitive codes as data matr
 
 ![](/assets/images/ecocModel5_large.jpg)
 
-In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V_k^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g6$$ and $$g7$$ are used to learn the latent structure of the 2 labels. The number of label dependency terms $$k$$ is a hyperparameter to be estimated by cross validation. 
+In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V_k^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g7$$ and $$g8$$ are used to learn the latent structure of the 2 labels. The number of label dependency terms $$k$$ is a hyperparameter to be estimated by cross validation. 
 
 
 \begin{equation}
@@ -143,7 +143,7 @@ Two hyperparameters are estimated in training, which are $$k$$ dependency terms 
  
 
 ## Gene label prediction
-The final step is to decode $$X$$ to a predicted label matrix $$Y^h$$, using the learned $$q$$ linear models and $$k$$ label dependency terms. In the toy example, the labels and repetitive codes for gene $$g3, g4, g5$$, and $$g8$$ are used for training the model. And gene $$g1, g2, g6$$, and $$g7$$ are decoded back to label probabilities. These are the label predictions for these four genes.  
+The final step is to decode $$X$$ to a predicted label matrix $$Y^h$$, using the learned $$q$$ linear models and $$k$$ label dependency terms. In the mentioned toy example throughout this page, the labels and repetitive codes for gene $$g1, g2, g7$$, and $$g8$$ are used for training the model. And the repetitive code for gene $$g3, g4, g5$$, and $$g6$$ are decoded back to label probabilities. These are the label predictions for these four genes.  
 
 ![](/assets/images/ecocModel6_large.jpg)
 
