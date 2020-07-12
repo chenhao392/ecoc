@@ -84,7 +84,7 @@ With the defined codeword matrix $$Z$$ and encoded repetitive codes as data matr
 
 ![](/assets/images/ecocModel5_large.jpg)
 
-In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V_k^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g7$$ and $$g8$$ are used to learn the latent structure of the 2 labels. The number of label dependency terms $$k$$ is a hyperparameter to be estimated by cross validation. 
+In encoding, a combination of linear and *Gaussian* regression models are used to encode codeword $$Z$$ to the data matrix $$X$$.  The linear classifiers are for each of the $$q$$ labels in $$Y$$,  and the gaussian regression models are for the $$k$$ label dependency terms ($$V^TY$$).  The following denotes the models for each row vector $$x^i$$ in $$X$$. In the toy example above, 4 row vectors for gene $$g1, g2, g7$$ and $$g8$$ are used to learn the latent structure of the 2 labels. The number of label dependency terms $$k$$ is a hyperparameter to be estimated by cross validation. 
 
 
 \begin{equation}
