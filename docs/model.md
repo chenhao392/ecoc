@@ -2,13 +2,16 @@
 layout: default
 ---
 # ECOC Model 
-Trained using known label genes and biological networks, this model learns a latent structure that predicts multiple labels for genes. It does so with four components.
-1. propagate each label on multiple networks;
-2. aggregate the propagation results into an "error correction of code" data matrix;
-3. learn a latent structure by combining linear classifiers for each label and *Gaussian* regressions models for label dependencies;
-4. predict labels for any genes in the data matrix.
+This model can be trained with labeled genes in biological networks and then estimate label probabilities for any genes in the networks.  
+>This description assumes that a label has been assigned to a set of known cooperating genes, and some other related labels have also been assigned to other genes in the training set. These labels can be fully customized from biological insights or generated computationally using gene set enrichment analysis (Please see this [demo](./demo1/html) for more detail).  
 
-Besides, the model's hyperparameters and two heuristics are also briefly explained after introducing these components. These heuristics improve data stratification in training, probability estimation, and robust threshold choice in practice. 
+This learning and predicting process contain four essential components.
+1. propagate each label on a set of networks;
+2. aggregate the propagation results into an "error correction of code" matrix;
+3. learn the coding schema between labels and this ECOC matrix;
+4. predict labels for any genes in the ECOC matrix.
+
+We'll also explain the model's hyperparameters and some additional implementation details. These implementations are for better data stratification, label probability estimation, and thresholding. 
 
 ## Multi-label space and network
 Let's start by defining the label space and networks. For $$q$$ known labels and $$p$$ genes, the gene labels can be expressed in both matrix and graph forms, such as the following toy example for two labels (red and blue). 
@@ -21,7 +24,7 @@ On the figure's left side, this label space is expressed as a binary matrix $$Y$
 Y=\left(y_{1,},~y_{2}\text{, ... ,}y_{j}\text{, ... , }y_{q}\right)
 \end{equation}
 
- A network $$G$$ is shown on the right side of this figure. It contains genes as nodes ($$V$$) and weighted edges($$W'$$) for associations between gene pairs. The labels are again denoted by the two colors. This network can be denoted as the following.
+On the right side of this figure, you can see the network ($$G$$) form with genes as nodes ($$V$$) and weighted edges($$W'$$) for associations between them. Again, red and blue denote the labels. 
 
 \begin{equation}
 G=\left(V, W'\right)
@@ -67,7 +70,7 @@ In practice, different iteration steps and starting label density generates thes
 
 
 
-## Latent coding structure
+## Coding schema
 Using the propagated value matrix $$X$$ and label matrix $$Y$$, this algorithm learns a latent structure consisting of $$q$$ labels and $$k$$ label dependency terms. Following Zhang *et al*, this structure is defined as a codeword matrix $$Z$$. 
 
 \begin{equation}
@@ -136,10 +139,10 @@ KL\left(Q(y)\vert P(y)\right)
  It is not trivial for dividing the training data to subsets in the context of gene function prediction algorithms, especially in a multi-label setting. Many of these labels are much less than the total number of genes in a species. With these small positive label ratio, random subsets can not preserve the same label dependencies as in the whole training data. This implementation uses a   **second-order iterative stratification** heuristic (Szymański and Kajdanowicz, 2017; Sechidis et al., 2011) to distribute the positive labels while maintaining the label ratios close to the entire training set.   
 
 ## Probability calibration
-This implementation automatically estimates $$q$$ thresholds for all labels' probabilities based on the harmonic mean of precision and recall (Fan and Lin, 2007; Zou et al.,2016). However, the raw probabilities estimated from this multi-label model is often skewed. As a result, a little change in the probability threshold can dramatically change the prediction outcome. Thus, a Platt's scaling heuristic (Lin et al.,2007; Platt, 1999) is integrated into this model to calibrate the probabilities for robust threshold estimations in practice. In addition, it is further modified to reduce the influence of false negatives (Rüping, 2006). As some genes' labels are still unknown, it is easy to come across false negatives in training data, which confuses this logistic regression based calibration process. This modification may remove a part of top predictions for a better estimation for calibration parameters, determined by the mean squared error in regression.
+This implementation automatically estimates $$q$$ thresholds for all labels' probabilities based on the harmonic mean of precision and recall (Fan and Lin, 2007; Zou et al.,2016). However, the raw probabilities estimated from this multi-label model is often skewed. As a result, a little change in the probability threshold can dramatically change the prediction outcome. Thus, a Platt's scaling heuristic (Lin et al.,2007; Platt, 1999) is integrated into this model to calibrate the probabilities for robust threshold estimations in practice. In addition, as some genes' labels are still unknown, it is easy to come across false negatives in training data, which confuses this logistic regression based calibration process. So, the calibration is further modified to reduce the influence of false negatives (Rüping, 2006). This modification may remove a part of top predictions in training for a better estimation for calibration parameters, determined by the mean squared error in regression. 
 
 ##  Hyperparameters
-Two hyperparameters are estimated in training, which are $$k$$ dependency terms and $$\lambda$$ that balance the linear classifier and the *Gaussian* regression models. The sub-command `ecoc tune` will automatically estimate them in training. They can also be specified directly in sub-command `ecoc pred`.
+Two hyperparameters are estimated in training, which are $$k$$ dependency terms in the coding schema and $$\lambda$$ that balance the linear classifier and the *Gaussian* regression models for decoding. The sub-command `ecoc tune` will automatically estimate them in training. They can also be specified directly in sub-command `ecoc pred`.
  
 
 ## Gene label prediction
