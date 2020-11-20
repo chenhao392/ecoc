@@ -46,6 +46,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	sigmaFctsSet := lamdaToSigmaFctsSet(lamdaSet)
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
+	rand.Seed(1)
 	//SOIS stratification
 	folds := SOIS(trYdata, nFold, 10, false)
 	//vars
@@ -58,7 +59,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
 		return nil, nil
 	}
-	//tsY_prob and trY_prob for prob tuning
+	//tsY_prob for prob tuning
 	tsY_Prob := mat64.NewDense(nTs, nLabel, nil)
 
 	//adding bias term for tsXData, trXdata

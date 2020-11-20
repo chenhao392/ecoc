@@ -377,15 +377,11 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 	mapY := make(map[int]int)
 	sumZero := 0
 	sumOne := 0
-	//skipY := make(map[int]int)
 	var sortYh []kv
 	for i := 0; i < n; i++ {
 		if Y.At(i, 0) == 1.0 {
 			mapY[i] = 1
 		}
-		//if Ys.At(i, 0) == 1.0 {
-		//	skipY[i] = 1
-		//}
 		ele := Yh.At(i, 0)
 		if math.IsNaN(ele) {
 			sortYh = append(sortYh, kv{i, 0.0})
@@ -413,54 +409,80 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 	all := 0.0
 	p := 0.0
 	tp := 0.0
-	k := 0.0
+	fp := 0.0
+	tn := 0.0
+	pr := 0.0
+	re := 0.0
+	beta1 := beta
+	beta2 := 1.0 / beta
+	invPr := 0.0
+	invRe := 0.0
+	fscore := 0.0
+	invFscore := 0.0
 	maxFscore = 0.0
-	optThres = 0.0
-	isFirstPositiveDetected := false
+	optThres = 1.0
 	isThresDetermined := false
 	total := float64(len(mapY))
+	invTotal := float64(n - len(mapY))
+	//inference 4 from qz for fixing init fscore zero with no pos at begin
+	k := 0.0
+	isFirstPositiveDetected := false
 	prData := make([]float64, 0)
 	prDataPartial := make([]float64, 0)
 	for _, kv := range sortYh {
-		//_, ok2 := skipY[kv.Key]
-		//if ok2 {
-		//continue
+		//if isFirstPositiveDetected {
+		//	k += 1
 		//}
-		if isFirstPositiveDetected {
-			k += 1
-		}
 		all += 1.0
 		p += 1.0
 		_, ok := mapY[kv.Key]
+		//prediction is positive
 		if ok {
+			isFirstPositiveDetected = true
 			tp += 1.0
-			pr := tp / p
-			re := tp / total
-			//update Fscore and thres
-			//fscore := 2 * pr * re / (pr + re)
-			fscore := (1 + beta*beta) * pr * re / (beta*beta*pr + re)
-			//fscore := 1.25 * tp / (1.25*tp + 0.25*(total-tp) + p - tp)
-			if !isFirstPositiveDetected {
-				isFirstPositiveDetected = true
-				maxFscore = fscore
-				optThres = kv.Value
-			}
-			kThres := (total - tp) / tp * (beta*beta*total + all - tp)
-			if k >= kThres {
-				isThresDetermined = true
-			}
-			if fscore > maxFscore && !isThresDetermined {
-				k = 0.0
-				maxFscore = fscore
-				optThres = kv.Value
-			}
+			pr = tp / p
+			re = tp / total
+			//update Fscore 2
+			fscore = (1 + beta1*beta1) * pr * re / (beta1*beta1*pr + re)
+			//record Aupr data
 			prData = append(prData, pr)
 			prData = append(prData, re)
 			if p < float64(n/2) {
 				prDataPartial = append(prData, pr)
 				prDataPartial = append(prData, re)
 			}
+			//prediction is negative
+		} else {
+			if !isFirstPositiveDetected {
+				k += 1
+			}
+			fp += 1.0
+			tn = invTotal - fp
+			if float64(n) > p {
+				invPr = tn / (float64(n) - p)
+				invRe = tn / invTotal
+			}
+			//update inv Fscore 0.5
+			invFscore = (1 + beta2*beta2) * invPr * invRe / (beta2*beta2*invPr + invRe)
 		}
+		//inference 4 from qz for fixing init fscore zero with no pos at begin
+		if !isFirstPositiveDetected && k > total {
+			isThresDetermined = true
+		}
+		//adjusted geometric f-measure
+		if !isThresDetermined {
+			agFscore := math.Sqrt(fscore * invFscore)
+			if agFscore > maxFscore {
+				maxFscore = agFscore
+				optThres = kv.Value
+			}
+		}
+		//}
+		//kThres := (total - tp) / tp * (beta*beta*total + all - tp)
+		//if k >= kThres {
+		//	isThresDetermined = true
+		//}
+
 	}
 	aupr = 0.0
 	pAupr = 0.0
@@ -672,8 +694,8 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 	tsYhat2 = mat64.NewDense(nRow, nCol, nil)
 	thresData2 = mat64.NewDense(1, nCol, nil)
 	for j := 0; j < nCol; j++ {
-		//max := 0.0
-		//min := 0.0
+		max := 0.0
+		//min := 1.0
 		ele := 0.0
 		//mm := 0.0
 		//var sortYh []kv
@@ -685,19 +707,38 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 			} else {
 				//ele = Sigmoid(tsYhat.At(i, j))
 				//ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / (math.Exp(1) - math.Exp(thresData.At(0, j)))
-				ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / (math.Exp(1) - math.Exp(thresData.At(0, j)))
+				//ele = (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / (math.Exp(1) - math.Exp(thresData.At(0, j)))
 				//ele = (tsYhat.At(i, j) - thresData.At(0, j)) / (1 - thresData.At(0, j))
+				ele = tsYhat.At(i, j) / thresData.At(0, j)
 				//ele = (Sigmoid(tsYhat.At(i, j)) - Sigmoid(thresData.At(0, j)))
 				//ele := (math.Exp(tsYhat.At(i, j)) - math.Exp(thresData.At(0, j))) / math.Exp(thresData.At(0, j))
 			}
 			//sum += ele
 			//sortYh = append(sortYh, kv{i, ele})
-			//if ele > max {
-			//	max = ele
-			//}
+			if ele > max {
+				max = ele
+			}
 			//if ele < min {
 			//	min = ele
 			//}
+		}
+		for i := 0; i < nRow; i++ {
+			if math.IsInf(thresData.At(0, j), 0) {
+				ele = 0.0
+			} else if thresData.At(0, j) == 1.0 || max < 1.0 {
+				ele = 0.0
+			} else {
+				ele = tsYhat.At(i, j) / thresData.At(0, j)
+			}
+			//recale
+			//(b-a)(ele-min)/(max-min)+a
+			if ele >= 1.0 {
+				ele = 0.5*ele/max + 0.5
+
+			} else if ele > 0.0 {
+				ele = 0.5 * ele
+			}
+
 			tsYhat2.Set(i, j, ele)
 		}
 		//sigmoidThres := Sigmoid(thresData.At(0, j))
@@ -738,7 +779,7 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 		//if thresData.At(0, j) < max {
 		//	thresData2.Set(0, j, 0.5)
 		//} else {
-		thresData2.Set(0, j, 0)
+		thresData2.Set(0, j, 0.5)
 		//thresData2.Set(0, j, sigmoidThres)
 		//}
 	}
@@ -956,8 +997,7 @@ func Single_compute(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rankCut int) (mic
 	return microF1, accuracy, macroAupr, microAupr
 }
 
-//func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, rebaData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64) {
-func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64, kPrec float64, firstAupr float64) {
+func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, rankCut int, isVerbose bool) (microF1 float64, accuracy float64, macroAupr float64, microAupr float64, agMicroF1 float64, optScore float64, firstAupr float64) {
 	//F1 score
 	_, nLabel := tsYdata.Caps()
 	sumAupr := 0.0
@@ -983,31 +1023,26 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	}
 	macroAupr = sumAupr / float64(nLabel)
 	//top k precision
-	nPrecCut := 10
-	nRow, _ := tsYdata.Caps()
-	if nPrecCut > nRow {
-		nPrecCut = nRow - 1
-	}
-	kPrec = TopKprec(tsYdata, tsYhat, nPrecCut)
-	//accuracy
-	//tmp, one thing at a time
-	//tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
-	tsYhat = MaskZeroByThres(tsYhat, thresData)
-	//tsYhat, thresData = SoftThresScale(tsYhat, thresData)
+	//nPrecCut := 10
+	//nRow, _ := tsYdata.Caps()
+	//if nPrecCut > nRow {
+	//	nPrecCut = nRow - 1
+	//}
+	//kPrec = TopKprec(tsYdata, tsYhat, nPrecCut)
 	tsYhatAccuracy, detectNanInf := BinPredByAlpha(tsYhat, 1, true)
 	accuracy = ComputeAccuracy(tsYdata, tsYhatAccuracy, false)
 	//y-flat and microAupr
 	tsYdataVec := Flat(tsYdata)
 	tsYhatVec := Flat(tsYhat)
 	microAupr, _, _, _ = ComputeAupr(tsYdataVec, tsYhatVec, 1.0)
+	//agMicroF1
+	agMicroF1 = MicroF1WithThres(tsYdata, tsYhat, thresData, rankCut)
+	//optimal score
+	optScore = math.Sqrt(microAupr * agMicroF1)
 	tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, true)
-	//tsYhat, thresData = RankPred(tsYhat, thresData)
 	//microF1
 	for i := 0; i < nLabel; i++ {
-		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), thresData.At(0, i))
 		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 0.99)
-		//fmt.Println(thresData.At(0, i))
-		//f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhat.ColView(i), thresData.At(0, i))
 		if isVerbose {
 			tpSet = append(tpSet, tp)
 			fpSet = append(fpSet, fp)
@@ -1027,14 +1062,14 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	if isVerbose {
 		fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "label", "tp", "fp", "fn", "tn", "F1", "AUPR")
 		for i := 0; i < nLabel; i++ {
-			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i], thresData.At(0, i))
+			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i])
 		}
 	}
 	if detectNanInf {
-		fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, kPrec)
-		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+		fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, agMicroF1)
+		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 	}
-	return accuracy, microF1, microAupr, macroAupr, kPrec, firstAupr
+	return accuracy, microF1, microAupr, macroAupr, agMicroF1, optScore, firstAupr
 }
 
 func RescaleData(data *mat64.Dense, thresData *mat64.Dense) (scaleData *mat64.Dense) {
@@ -1117,23 +1152,120 @@ func EleCopy(data *mat64.Dense) (data2 *mat64.Dense) {
 	return data2
 }
 
-func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, beta float64, isParAuprThres bool) (thres *mat64.Dense) {
+func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense) {
+	//init
+	betaSet := []float64{4.0, 3.75, 3.5, 3.25, 3.0, 2.75, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25}
 	_, nCol := tsYdata.Caps()
-	thres = mat64.NewDense(1, nCol, nil)
-	//tsYhat2 := Zscore(tsYhat)
+	rankCut := nCol - 1
+	thresData := mat64.NewDense(1, nCol, nil)
+	tmpThresData := mat64.NewDense(1, nCol, nil)
+	beta = mat64.NewDense(1, nCol, nil)
 	for i := 0; i < nCol; i++ {
-		aupr, pAupr, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta)
-		beta = 2 * aupr
-		_, _, _, optThres = ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta)
-		if isParAuprThres {
-			if pAupr > 0.1 {
-				thres.Set(0, i, optThres)
+		beta.Set(0, i, 2.0)
+		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 2.0)
+		thresData.Set(0, i, optThres)
+	}
+	//Accuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
+	tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, thresData)
+	microAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
+	microF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
+	score := math.Sqrt(microAupr * microF1)
+	//while loop for optimal microF1
+	notConverged := true
+	maxItr := 3
+	itr := 0
+	for notConverged {
+		//preAccuracy := Accuracy
+		//preMicroAupr := microAupr
+		//preMicroF1 := microF1
+		preScore := score
+		for i := 0; i < nCol; i++ {
+			tmpThresData = thresData
+			for j := 0; j < len(betaSet); j++ {
+				_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), betaSet[j])
+				tmpThresData.Set(0, i, optThres)
+				//tmpAccuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
+				tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, tmpThresData)
+				tmpMicroAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
+				tmpMicroF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
+				tmpScore := math.Sqrt(tmpMicroAupr * tmpMicroF1)
+				//if tmpMicroAupr > microAupr {
+				//if tmpMicroF1 > microF1 {
+				if tmpScore > score {
+					beta.Set(0, i, betaSet[j])
+					//microAupr := MicroAuprWithThres(tsYdata, tsYhat, thresData, rankCut)
+					//Accuracy = tmpAccuracy
+					//microAupr = tmpMicroAupr
+					//microF1 = tmpMicroF1
+					score = tmpScore
+					thresData = tmpThresData
+				}
+			}
+
+		}
+		itr += 1
+		if itr <= maxItr {
+			if score > preScore {
+				//if microAupr > preMicroAupr {
+				//if microF1 > preMicroF1 {
+				//preMicroAupr = microAupr
+				//preMicroF1 = microF1
+				preScore = score
 			} else {
-				thres.Set(0, i, 1.0)
+				notConverged = false
 			}
 		} else {
-			thres.Set(0, i, optThres)
+			notConverged = false
 		}
+	}
+	return beta
+}
+
+func AccuracyWithThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense) (Accuracy float64) {
+	_, nCol := tsYhat.Caps()
+	rankCut := nCol - 1
+	tsYhat = MaskZeroByThres(tsYhat, thresData)
+	tsYhatAccuracy, _ := BinPredByAlpha(tsYhat, rankCut, true)
+	Accuracy = ComputeAccuracy(tsYdata, tsYhatAccuracy, false)
+	return Accuracy
+}
+
+func MicroAuprWithThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense) (microAupr float64) {
+	tsYdataVec := Flat(tsYdata)
+	tsYhatVec := Flat(tsYhat)
+	microAupr, _, _, _ = ComputeAupr(tsYdataVec, tsYhatVec, 1.0)
+	return microAupr
+}
+func MicroF1WithThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, rankCut int) (microF1 float64) {
+	sumTp := 0
+	sumFp := 0
+	sumFn := 0
+	sumTn := 0
+	_, nLabel := tsYhat.Caps()
+	//rankCut := nLabel - 1
+	tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, true)
+	for i := 0; i < nLabel; i++ {
+		_, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 0.99)
+		sumTp += tp
+		sumFp += fp
+		sumFn += fn
+		sumTn += tn
+	}
+	p := float64(sumTp) / (float64(sumTp) + float64(sumFp))
+	r := float64(sumTp) / (float64(sumTp) + float64(sumFn))
+	invP := float64(sumTn) / (float64(sumTn) + float64(sumFn))
+	invR := float64(sumTn) / (float64(sumTn) + float64(sumFp))
+	microF1 = (1.0 + 1.0*1.0) * p * r / (p + r)
+	invMicroF1 := (1.0 + 1.0*1.0) * invP * invR / (invP + invR)
+	microF1 = math.Sqrt(microF1 * invMicroF1)
+	return microF1
+}
+func FscoreThres(tsYdata *mat64.Dense, tsYhat *mat64.Dense, beta *mat64.Dense) (thres *mat64.Dense) {
+	_, nCol := tsYdata.Caps()
+	thres = mat64.NewDense(1, nCol, nil)
+	for i := 0; i < nCol; i++ {
+		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta.At(0, i))
+		thres.Set(0, i, optThres)
 	}
 	return thres
 }
@@ -1290,10 +1422,12 @@ func AccumTsYdata(iFold int, c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY
 	}
 }
 
-func BestHyperParameterSetByMeasure(trainMeasure *mat64.Dense, index int) (cBest int, value float64) {
+func BestHyperParameterSetByMeasure(trainMeasure *mat64.Dense, index int, isKnn bool) (cBest int, value float64, microAupr float64, microF1 float64) {
 	var sortMap []kv
 	n, _ := trainMeasure.Caps()
-	//best before kNN calibration
+	if isKnn {
+		index += 1
+	}
 	for i := 0; i < n; i++ {
 		if math.IsNaN(trainMeasure.At(i, index)) {
 			sortMap = append(sortMap, kv{i, 0.0})
@@ -1306,5 +1440,7 @@ func BestHyperParameterSetByMeasure(trainMeasure *mat64.Dense, index int) (cBest
 	})
 	cBest = sortMap[0].Key
 	value = sortMap[0].Value
-	return cBest, value
+	microAupr = trainMeasure.At(cBest, index-4)
+	microF1 = trainMeasure.At(cBest, index-6)
+	return cBest, value, microAupr, microF1
 }

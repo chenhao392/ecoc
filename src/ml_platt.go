@@ -514,25 +514,58 @@ func pseudoLabel(nPos int, Yh *mat64.Vector) (pseudoY *mat64.Vector) {
 func PlattScale(Yh *mat64.Vector, A float64, B float64) (Yhh []float64) {
 	len := Yh.Len()
 	Yhh = make([]float64, 0)
-	//max := 0.0
-	//min := 0.0
+	max := 0.0
+	min := 1.0
 	for i := 0; i < len; i++ {
 		ele := 1.0 / (1.0 + math.Exp(A*Yh.At(i, 0)+B))
 		Yhh = append(Yhh, ele)
-		//if ele > max {
-		//	max = ele
-		//}
-		//if ele < min {
-		//	min = ele
-		//}
+		if ele > max {
+			max = ele
+		}
+		if ele < min && ele > 0.0 {
+			min = ele
+		}
 	}
 
-	//if max < 0.99999 {
-	//	scale := max - min
+	//init scale
+	scale := max - min
+	//nonOneMax := 0.0
+	//nonZeroMin := 1.0
+	for i := 0; i < len; i++ {
+		Yhh[i] = (Yhh[i] - min) / scale
+		//	if Yhh[i] <= 0.9999999 && Yhh[i] > nonOneMax {
+		//		nonOneMax = Yhh[i]
+		//	}
+		//	if Yhh[i] >= 0.0 && Yhh[i] < nonZeroMin {
+		//		nonZeroMin = Yhh[i]
+		//	}
+	}
+
+	//loop until instance interval at both ends smaller than thres
+	//for nonOneMax <= 0.95 || nonZeroMin >= 0.05 {
+	//	log.Print("trigger rescale in Platt, with non-one max ", nonOneMax, " and non-zero min ", nonZeroMin)
+	//	scale := nonOneMax - nonZeroMin
+	//	min = nonZeroMin //for scaling function
+	//	nonOneMax = 0.0
+	//	nonZeroMin = 1.0
 	//	for i := 0; i < len; i++ {
 	//		Yhh[i] = (Yhh[i] - min) / scale
+	//		if Yhh[i] < 0.9999999 && Yhh[i] > nonOneMax {
+	//			nonOneMax = Yhh[i]
+	//		}
+	//		if Yhh[i] > 0.0 && Yhh[i] < nonZeroMin {
+	//			nonZeroMin = Yhh[i]
+	//		}
+	//		//tail value smaller than zero reset as zero
+	//		if Yhh[i] < 0.0 {
+	//			Yhh[i] = 0.0
+	//		}
+	//		//head value greater than one reset as one
+	//		if Yhh[i] > 1.0 {
+	//			Yhh[i] = 1.0
+	//		}
 	//	}
-	//
+
 	//}
 	return Yhh
 }

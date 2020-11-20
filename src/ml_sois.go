@@ -6,11 +6,12 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type combineList struct {
 	Key      string
-	Sum      int
+	Sum      float64
 	Combines [][]int
 	Count    int
 	Rows     []int
@@ -28,16 +29,26 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int
 	perRowCombine := make(map[int][][]int)
 	sampleWithCombineMap := make(map[string]combineList)
 	allNegRow := make([]int, 0)
+	lRatio, _ := labelRatio(trY) //label scores for ranking most minority label (pairs) first
 	//init folds
 	folds = make(map[int][]int)
 	for i := 0; i < nFold; i++ {
 		tmp := make([]int, 0)
 		folds[i] = tmp
 	}
+	//pseudo rand Ints for avoiding a timesteamp rand related anomaly in some runs
+	//instances were non-randomly distributed way away from random
+	rand.Seed(1)
+	randInts := make([]int, 0)
+	for i := 0; i < nRow; i++ {
+		n := rand.Int()
+		randInts = append(randInts, n)
+	}
+
 	for rowIdx := 0; rowIdx < nRow; rowIdx++ {
-		key, sum, combines := genCombines(trY.RawRowView(rowIdx))
+		key, sum, combines := genCombines(trY.RawRowView(rowIdx), lRatio)
 		rowUsed[rowIdx] = false
-		if sum == 0 {
+		if sum == 0.0 {
 			allNegRow = append(allNegRow, rowIdx)
 			continue
 		}
@@ -72,31 +83,30 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int
 			sampleWithCombineMap[key] = tmp
 		}
 	}
-	//per combination per fold and per fold
+	//perCombinePerFold map[indexForFold]map[combineString..such..as"1"..and.."1,3"]counts
+	//perFold           map[indexForFold]totalInstanceCount
 	perCombinePerFold := make(map[int]map[string]float64)
+	perLabelPerFold := make(map[int]map[string]float64)
 	perFold := make(map[int]float64)
 	for i := 0; i < nFold; i++ {
 		for com, count := range allCombine {
-			//_, exist := perCombinePerFold[i]
-			//if !exist {
 			tmp := make(map[string]float64)
 			tmp[com] = count / float64(nFold)
 			perCombinePerFold[i] = tmp
-			//} else {
-			//	_, exist2 := perCombinePerFold[i][com]
-			//	if !exist2 {
-			//		tmp := make(map[string]float64)
-			//		tmp[com] = count / float64(nFold)
-			//		perCombinePerFold[i][com] += count / float64(nFold)
-			//	}
-			//}
 		}
 		perFold[i] = float64(nRow) / float64(nFold)
+		for j := 0; j < len(lRatio); j++ {
+			tmp := make(map[string]float64)
+			ele := strconv.Itoa(j)
+			tmp[ele] = 0.0
+			perLabelPerFold[i] = tmp
+		}
 	}
 
 	//folds
 	key := mostDemandCombine(sampleWithCombineMap)
 	for key != "" {
+		//log.Print("Choose key: ", key, " with Sum ", sampleWithCombineMap[key].Sum, " and Count ", sampleWithCombineMap[key].Count)
 		for j := 0; j < len(sampleWithCombineMap[key].Combines); j++ {
 			//ele is one combine in the loop for key
 			ele := strconv.Itoa(sampleWithCombineMap[key].Combines[j][0])
@@ -110,14 +120,7 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int
 					continue
 				}
 				//append rowIdx to folds and mark as used
-				iFold := mostDemandFold(perCombinePerFold, perFold, ele, rowIdx, nFold)
-				//_, exist := folds[iFold]
-				//if !exist {
-				//	tmp := make([]int, 0)
-				//	tmp = append(tmp, rowIdx)
-				//	folds[iFold] = tmp
-				//} else {
-				//fmt.Println(iFold)
+				iFold := mostDemandFold(perCombinePerFold, perLabelPerFold, lRatio, perFold, ele, rowIdx, randInts[rowIdx], nFold)
 				folds[iFold] = append(folds[iFold], rowIdx)
 				//}
 				rowUsed[rowIdx] = true
@@ -134,12 +137,21 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int
 					}
 				}
 				//change counts in perCombinePerFold for all combine ele touched by rowIdx
+				//record all label elements in this row
+				allLabelInRow := make(map[string]string)
 				for k := 0; k < len(perRowCombine[rowIdx]); k++ {
 					ele2 := strconv.Itoa(perRowCombine[rowIdx][k][0])
+					allLabelInRow[ele2] = ""
 					if len(perRowCombine[rowIdx][k]) == 2 {
-						ele2 = ele2 + "," + strconv.Itoa(perRowCombine[rowIdx][k][1])
+						ele3 := strconv.Itoa(perRowCombine[rowIdx][k][1])
+						ele2 = ele2 + "," + ele3
+						allLabelInRow[ele3] = ""
 					}
-					perCombinePerFold[iFold][ele] -= 1.0
+					perCombinePerFold[iFold][ele2] -= 1.0
+				}
+				//change counts in perLabelPerFold for all label/ele touched by rowIdx
+				for label, _ := range allLabelInRow {
+					perLabelPerFold[iFold][label] += 1.0
 				}
 				//change counts in perFold
 				perFold[iFold] -= 1.0
@@ -199,7 +211,19 @@ func remove(slice []int, i int) []int {
 	return slice[:len(slice)-1]
 }
 
-func mostDemandFold(perCombinePerFold map[int]map[string]float64, perFold map[int]float64, combine string, rowIdx int, nFold int) (iFold int) {
+//perCombinePerFold map[indexForFold]map[combineString..such..as"1"..and.."1,3"]counts
+//perLabelPerFold map[indexForFold]map[labelString..such..as"0"]counts
+//perFold           map[indexForFold]totalInstanceCount
+//combine           combineString..such..as"1"..and.."1,3"
+//rowIdx            rowIndex
+//nFold             number of folds to distribute instances
+//iFold             choosen fold index
+func mostDemandFold(perCombinePerFold map[int]map[string]float64, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, perFold map[int]float64, combine string, rowIdx int, randInt int, nFold int) (iFold int) {
+	//is the label pair should be filled to minority labels?
+	minorLabelFold, isMinorLabel := mostUnderRepFold(combine, perLabelPerFold, labelRatio, nFold, 0.8)
+	if isMinorLabel {
+		return minorLabelFold
+	}
 	var sortMap []kv
 	for i := 0; i < nFold; i++ {
 		sortMap = append(sortMap, kv{i, perCombinePerFold[i][combine]})
@@ -207,7 +231,7 @@ func mostDemandFold(perCombinePerFold map[int]map[string]float64, perFold map[in
 	sort.Slice(sortMap, func(i, j int) bool {
 		return sortMap[i].Value > sortMap[j].Value
 	})
-	//more than one fold with the same fold??
+	//is more than one fold with the same demand value?
 	demandValue := sortMap[0].Value
 	var sortMap2 []kv
 	for i := 0; i < nFold; i++ {
@@ -215,6 +239,7 @@ func mostDemandFold(perCombinePerFold map[int]map[string]float64, perFold map[in
 			sortMap2 = append(sortMap2, kv{i, perFold[i]})
 		}
 	}
+	//if so, roll the dice
 	if len(sortMap2) == 1 {
 		return sortMap2[0].Key
 	} else {
@@ -231,7 +256,7 @@ func mostDemandFold(perCombinePerFold map[int]map[string]float64, perFold map[in
 		if len(foldsIdx) == 1 {
 			return foldsIdx[0]
 		} else {
-			n := rand.Int() % len(foldsIdx)
+			n := randInt % len(foldsIdx)
 			return foldsIdx[n]
 		}
 
@@ -263,23 +288,131 @@ func mostDemandCombine(sampleWithCombineMap map[string]combineList) (key string)
 	return ""
 }
 
-func genCombines(rowVec []float64) (key string, sum int, sets [][]int) {
-	sets = make([][]int, 0)
+//sets ordered so that the largest label scores are ranked top
+//so that it is firstly considered in subsetting for this key type
+func genCombines(rowVec []float64, labelRatio map[int]float64) (key string, sum float64, roSets [][]int) {
+	sets := make([][]int, 0)
+	roSets = make([][]int, 0) //reodered sets
+	setScore := make([]float64, 0)
 	key = ""
 	sum = 0
 	for i := 0; i < len(rowVec); i++ {
-		key = key + strconv.Itoa(i)
+		key = key + strconv.Itoa(int(rowVec[i]))
 		if rowVec[i] == 1.0 {
-			sum += 1
+			sum += labelRatio[i]
 			ele := []int{i}
 			sets = append(sets, ele)
+			setScore = append(setScore, labelRatio[i])
 			for j := i + 1; j < len(rowVec); j++ {
 				if rowVec[j] == 1.0 {
 					ele := []int{i, j}
 					sets = append(sets, ele)
+					setScore = append(setScore, labelRatio[i]+labelRatio[j])
 				}
 			}
 		}
 	}
-	return key, sum, sets
+	//sort the setScores
+	var sortMap []kv
+	for i := 0; i < len(setScore); i++ {
+		sortMap = append(sortMap, kv{i, setScore[i]})
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value > sortMap[j].Value
+	})
+	for i := 0; i < len(setScore); i++ {
+		roSets = append(roSets, sets[sortMap[i].Key])
+	}
+
+	return key, sum, roSets
+}
+
+func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, combineScore map[string]float64) {
+	labelScore = make(map[int]float64, 0)
+	combineScore = make(map[string]float64, 0)
+	nRow, nCol := trY.Caps()
+	colSum := mat64.NewDense(1, nCol, nil)
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nCol; j++ {
+			if trY.At(i, j) == 1.0 {
+				colSum.Set(0, j, colSum.At(0, j)+1)
+			}
+		}
+	}
+	//max in colSums
+	max := 0.0
+	for j := 0; j < nCol; j++ {
+		if colSum.At(0, j) > max {
+			max = colSum.At(0, j)
+		}
+	}
+	//label Score
+	for j := 0; j < nCol; j++ {
+		labelScore[j] = max / colSum.At(0, j)
+		ele := strconv.Itoa(j)
+		combineScore[ele] = labelScore[j]
+	}
+	//combine score
+	for i := 0; i < nCol; i++ {
+		for j := i + 1; j < nCol; j++ {
+			ele := strconv.Itoa(i)
+			ele = ele + "," + strconv.Itoa(j)
+			combineScore[ele] = labelScore[i] + labelScore[j]
+		}
+	}
+	return labelScore, combineScore
+}
+
+func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, nFold int, thresRatio float64) (minorLabelFold int, isMinorLabel bool) {
+	//init
+	minorLabelFold = -1
+	isMinorLabel = false
+	ele := ""
+	//single label
+	if !strings.Contains(combine, ",") {
+		ele = combine
+		//label pair, choose larger ratio label
+	} else {
+		idx := strings.Split(combine, ",")
+		a, _ := strconv.Atoi(idx[0])
+		b, _ := strconv.Atoi(idx[1])
+		if labelRatio[a] > labelRatio[b] {
+			ele = idx[0]
+		} else {
+			ele = idx[1]
+		}
+	}
+	//find empty subset
+	for i := 0; i < nFold; i++ {
+		//mark empty subset directly and break
+		if perLabelPerFold[i][ele] == 0.0 {
+			minorLabelFold = i
+			isMinorLabel = true
+			break
+		}
+	}
+	//if no empty subset
+	max := 0.0
+	if !isMinorLabel {
+		for i := 0; i < nFold; i++ {
+			if perLabelPerFold[i][ele] < max {
+				max = perLabelPerFold[i][ele]
+			}
+		}
+		minRatio := 1.0
+		minIdx := -1
+		for i := 0; i < nFold; i++ {
+			ratio := perLabelPerFold[i][ele] / max
+			if ratio < minRatio {
+				minRatio = ratio
+				minIdx = i
+			}
+		}
+		if minRatio <= thresRatio {
+			minorLabelFold = minIdx
+			isMinorLabel = true
+		}
+	}
+
+	return minorLabelFold, isMinorLabel
 }

@@ -23,6 +23,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/chenhao392/ecoc/src"
+	"github.com/gonum/matrix/mat64"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -42,7 +43,7 @@ var reportCmd = &cobra.Command{
                                                                            
 Calculate per label benchmark scores.
   Sample usages:
-  ecoc report --tsY tsMatrix.txt --i pred.matrix.txt --s thres.txt`,
+  ecoc report --tsY tsMatrix.txt --i pred.matrix.txt`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if !cmd.Flags().Changed("tsY") {
 			cmd.Help()
@@ -51,14 +52,19 @@ Calculate per label benchmark scores.
 		tsY, _ := cmd.Flags().GetString("tsY")
 		tsYh, _ := cmd.Flags().GetString("i")
 		rankCut, _ := cmd.Flags().GetInt("r")
-		thresFile, _ := cmd.Flags().GetString("s")
+		//thresFile, _ := cmd.Flags().GetString("s")
 
 		tsYdata, _, _, _ := src.ReadFile(tsY, true, true)
 		tsYhat, _, _, _ := src.ReadFile(tsYh, false, false)
-		thresData, _, _, _ := src.ReadFile(thresFile, false, false)
-		accuracy, microF1, microAupr, macroAupr, _, firstAupr := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
+		//thresData, _, _, _ := src.ReadFile(thresFile, false, false)
+		_, nLabel := tsYhat.Caps()
+		thresData := mat64.NewDense(1, nLabel, nil)
+		for i := 0; i < nLabel; i++ {
+			thresData.Set(0, i, 0.5)
+		}
+		accuracy, microF1, microAupr, macroAupr, agMicroAupr, _, firstAupr := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
 		//fmt.Println(accuracy, microF1, microAupr, macroAupr)
-		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f fAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, firstAupr)
+		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f agMicroAupr: %1.3f firstAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, agMicroAupr, firstAupr)
 	},
 }
 

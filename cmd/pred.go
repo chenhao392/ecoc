@@ -136,7 +136,7 @@ var predCmd = &cobra.Command{
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
 
-		//nested cv training data propagation on nwtworks
+		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
 			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
@@ -146,8 +146,8 @@ var predCmd = &cobra.Command{
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//measure matrix
 		nL := nK * len(lamdaSet)
-		trainMeasure := mat64.NewDense(nL, 13, nil)
-		testMeasure := mat64.NewDense(1, 7, nil)
+		trainMeasure := mat64.NewDense(nL, 15, nil)
+		testMeasure := mat64.NewDense(1, 9, nil)
 		//tune and predict
 		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
