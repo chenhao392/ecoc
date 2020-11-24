@@ -30,29 +30,35 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
-	mutex.Lock()
-	sigma.Set(0, i, math.Sqrt(optMSE))
 	//bias term for tsXdata added before
 	element := mat64.NewDense(0, 0, nil)
 	element.Mul(tsXdataB, beta)
+	mutex.Lock()
+	sigma.Set(0, i, math.Sqrt(optMSE))
 	for j := 0; j < nTs; j++ {
 		tsY_C.Set(j, i, element.At(j, 0))
 	}
 	mutex.Unlock()
 }
 
-func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
+func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, folds map[int][]int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
 	YhSet = make(map[int]*mat64.Dense)
 	sigmaFctsSet := lamdaToSigmaFctsSet(lamdaSet)
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
-	rand.Seed(1)
-	//SOIS stratification
-	folds := SOIS(trYdata, nFold, 10, false)
 	//vars
+	_, nLabel := trYdata.Caps()
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
-	_, nLabel := trYdata.Caps()
+	//for rand in MLSMOTE
+	randValues := RandListFromUniDist(nTr, nFea)
+	//multi-label SMOTE
+	trXdata, trYdata = MLSMOTE(trXdata, trYdata, 5, randValues)
+	//redefine vars and rands after MLSMOTE
+	nTr, nFea = trXdata.Caps()
+	nTs, _ = tsXdata.Caps()
+	randValues = RandListFromUniDist(nTr, nFea)
+	idxPerm := rand.Perm(nTr)
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
@@ -109,9 +115,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//decoding with regression
 	tsY_C := mat64.NewDense(nTs, nLabel, nil)
 	sigma := mat64.NewDense(1, nLabel, nil)
-	//for workers
-	randValues := RandListFromUniDist(nTr, nFea)
-	idxPerm := rand.Perm(nTr)
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
 		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)

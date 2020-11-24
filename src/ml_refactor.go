@@ -145,7 +145,7 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 	return cvTrain, cvTest, trXdataCV, indAccum
 }
 
-func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
+func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, nK int, nKnn int, isFirst bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
 	//traing data per hyperparameter
 	YhPlattSet := make(map[int]*mat64.Dense)
 	YhPlattSetCalibrated := make(map[int]*mat64.Dense)
@@ -158,122 +158,48 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 	_, nLabel := trYdata.Caps()
 	globalBetaRaw := mat64.NewDense(nK*len(lamdaSet), nLabel, nil)
 	globalBetaKnn := mat64.NewDense(nK*len(lamdaSet), nLabel, nil)
+	//subFolds
+	subFolds := make(map[int]map[int][]int)
+	//nested folds for training data
+	wg.Add(nFold)
+	for f := 0; f < nFold; f++ {
+		go single_SOIS(subFolds, f, trainFold[f].Y, nFold, 10, 0, false, wg, mutex)
+	}
+	wg.Wait()
+	log.Print("nested SOIS folds generated.")
+	//measure matrix
+	nL := nK * len(lamdaSet)
+	trainMeasure := mat64.NewDense(nL, 15, nil)
+	testMeasure := mat64.NewDense(1, 9, nil)
 
 	for i := 0; i < nFold; i++ {
-		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, lamdaSet, nFold, nK, wg, mutex)
-		tsYfold := PosSelect(testFold[i].Y, colSum)
+		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, lamdaSet, nFold, subFolds[i], nK, wg, mutex)
+		tsYFold := PosSelect(testFold[i].Y, colSum)
 
 		c := 0
+		wg.Add(nK * len(lamdaSet))
 		//accum calculated training data
 		for m := 0; m < nK; m++ {
 			for n := 0; n < len(lamdaSet); n++ {
-				tsYhat, _ := QuantileNorm(YhSet[c], mat64.NewDense(0, 0, nil), false)
-				_, nCol := tsYhat.Caps()
-				minMSElamda := make([]float64, nCol)
-				minMSE := make([]float64, nCol)
-				_, isDefinedMSE := plattRobustMeasure[c]
-				if !isDefinedMSE {
-					plattRobustMeasure[c] = mat64.NewDense(len(plattRobustLamda), nCol, nil)
-				}
-				for p := 0; p < len(plattRobustLamda); p++ {
-					tmpLamda := make([]float64, 0)
-					for q := 0; q < nCol; q++ {
-						tmpLamda = append(tmpLamda, plattRobustLamda[p])
-					}
-					_, _, mseArr := Platt(tsYhat, tsYfold, tsYhat, tmpLamda)
-					for q := 0; q < nCol; q++ {
-						plattRobustMeasure[c].Set(p, q, plattRobustMeasure[c].At(p, q)+mseArr[q])
-						if p == 0 {
-							minMSE[q] = mseArr[q]
-							minMSElamda[q] = plattRobustLamda[p]
-						} else {
-							if mseArr[q] < minMSE[q] {
-								minMSE[q] = mseArr[q]
-								minMSElamda[q] = plattRobustLamda[p]
-							}
-						}
-					}
-				}
-
-				tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
-				//raw thres added
-				rawBeta := FscoreBeta(tsYfold, tsYhat)
-				rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
-				//tsYhat, rawThres = QuantileNorm(tsYhat, rawThres, true)
-				tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
-				//accum to add information for KNN calibaration
-				AccumTsYdata(i, c, colSum, YhSet[c], tsYfold, testFold[i].X, testFold[i].IndAccum, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, rawThres)
+				go single_AccumTsYdata(tsYFold, YhSet[c], i, c, colSum, testFold[i].X, testFold[i].IndAccum, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, plattRobustMeasure, plattRobustLamda, wg, mutex)
 				c += 1
 			}
 		}
+		wg.Wait()
+		log.Print("step 4: recalibration data obtained.")
 	}
 	//update all meassures before or after KNN calibration
 	for i := 0; i < nFold; i++ {
 		c := 0
+		wg.Add(nK * len(lamdaSet))
 		for m := 0; m < nK; m++ {
 			for n := 0; n < len(lamdaSet); n++ {
-				trainMeasure.Set(c, 0, float64(kSet[m]))
-				trainMeasure.Set(c, 1, lamdaSet[n])
-				trainMeasure.Set(c, 2, trainMeasure.At(c, 2)+1.0)
-				yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold := SubSetTrain(i, yPlattSet[c], YhPlattSet[c], yPredSet[c], xSet[c], iFoldMarker[c])
-				//calculate platt scaled tsYhat again for measures
-				_, nCol := tsYhat.Caps()
-				minMSElamda := make([]float64, nCol)
-				minMSE := make([]float64, nCol)
-				for p := 0; p < len(plattRobustLamda); p++ {
-					for q := 0; q < nCol; q++ {
-						if p == 0 {
-							minMSE[q] = plattRobustMeasure[c].At(p, q)
-							minMSElamda[q] = plattRobustLamda[p]
-						} else {
-							if plattRobustMeasure[c].At(p, q) < minMSE[q] {
-								minMSE[q] = plattRobustMeasure[c].At(p, q)
-								minMSElamda[q] = plattRobustLamda[p]
-							}
-						}
-					}
-				}
-				tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
-				tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
-				beta := FscoreBeta(tsYfold, tsYhat)
-				for p := 0; p < nLabel; p++ {
-					globalBetaRaw.Set(c, p, globalBetaRaw.At(c, p)+beta.At(0, p))
-				}
-				rawThres := FscoreThres(tsYfold, tsYhat, beta)
-				//tsYhat, thres = QuantileNorm(tsYhat, thres, true)
-				tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
-				accuracy, microF1, microAupr, macroAupr, _, optScore, firstAupr := Report(tsYfold, tsYhat, rawThres, rankCut, false)
-				trainMeasure.Set(c, 3, trainMeasure.At(c, 3)+accuracy)
-				trainMeasure.Set(c, 5, trainMeasure.At(c, 5)+microF1)
-				trainMeasure.Set(c, 7, trainMeasure.At(c, 7)+microAupr)
-				trainMeasure.Set(c, 9, trainMeasure.At(c, 9)+macroAupr)
-				//trainMeasure.Set(c, 11, trainMeasure.At(c, 11)+kPrec)
-				trainMeasure.Set(c, 11, trainMeasure.At(c, 11)+optScore)
-				trainMeasure.Set(c, 13, trainMeasure.At(c, 13)+firstAupr)
-				//probability to be recalibrated for label dependency, subset train by fold
-				if nKnn > 0 {
-					tsYhat = MultiLabelRecalibrate(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls, wg, mutex)
-					rawBeta := FscoreBeta(tsYfold, tsYhat)
-					for p := 0; p < nLabel; p++ {
-						globalBetaKnn.Set(c, p, globalBetaKnn.At(c, p)+rawBeta.At(0, p))
-					}
-					rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
-					tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
-					//update MultiLabelRecalibrate tsYhat to YhPlattSet
-					YhPlattSetUpdate(i, c, YhPlattSetCalibrated, tsYhat, iFoldMarker[c])
-					accuracy, microF1, microAupr, macroAupr, _, optScore, firstAupr = Report(tsYfold, tsYhat, rawThres, rankCut, false)
-					trainMeasure.Set(c, 4, trainMeasure.At(c, 4)+accuracy)
-					trainMeasure.Set(c, 6, trainMeasure.At(c, 6)+microF1)
-					trainMeasure.Set(c, 8, trainMeasure.At(c, 8)+microAupr)
-					trainMeasure.Set(c, 10, trainMeasure.At(c, 10)+macroAupr)
-					//trainMeasure.Set(c, 12, trainMeasure.At(c, 12)+kPrec)
-					trainMeasure.Set(c, 12, trainMeasure.At(c, 12)+optScore)
-					trainMeasure.Set(c, 14, trainMeasure.At(c, 14)+firstAupr)
-				}
+				//trainMeasure, globalBetaRaw and globalBetaKnn recorded
+				go single_RecordMeasures(rankCut, kSet[m], lamdaSet[n], c, nLabel, nKnn, trainMeasure, globalBetaRaw, globalBetaKnn, i, yPlattSet, YhPlattSet, YhPlattSetCalibrated, yPredSet, xSet, iFoldMarker, plattRobustMeasure, plattRobustLamda, posLabelRls, negLabelRls, wg, mutex)
 				c += 1
-
 			}
 		}
+		wg.Wait()
 	}
 	log.Print("pass training.")
 
@@ -353,7 +279,7 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 		thres = FscoreThres(yPlattSet[cBest], YhPlattScale, betaValue)
 	}
 	//testing run with cBest hyperparameter
-	YhSet, _ := EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, lamdaSet, nFold, 1, wg, mutex)
+	YhSet, _ := EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, lamdaSet, nFold, folds, 1, wg, mutex)
 	tsYhat, _ = QuantileNorm(YhSet[0], mat64.NewDense(0, 0, nil), false)
 	tsYhat = PlattScaleSet(tsYhat, plattAB)
 	if isKnn {
@@ -378,4 +304,111 @@ func TuneAndPredict(nFold int, fBetaThres float64, nK int, nKnn int, isFirst boo
 		c += 1
 	}
 	return trainMeasure, testMeasure, tsYhat, thres, YhPlattScale, YhPlattSetCalibrated[cBest], yPlattSet[cBest]
+}
+
+func single_AccumTsYdata(tsYfold *mat64.Dense, rawTsYhat *mat64.Dense, iFold int, c int, colSum *mat64.Vector, tsX *mat64.Dense, indAccum []int, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	tsYhat, _ := QuantileNorm(rawTsYhat, mat64.NewDense(0, 0, nil), false)
+	_, nCol := tsYhat.Caps()
+	minMSElamda := make([]float64, nCol)
+	minMSE := make([]float64, nCol)
+	_, isDefinedMSE := plattRobustMeasure[c]
+	mutex.Lock()
+	if !isDefinedMSE {
+		plattRobustMeasure[c] = mat64.NewDense(len(plattRobustLamda), nCol, nil)
+	}
+	for p := 0; p < len(plattRobustLamda); p++ {
+		tmpLamda := make([]float64, 0)
+		for q := 0; q < nCol; q++ {
+			tmpLamda = append(tmpLamda, plattRobustLamda[p])
+		}
+		_, _, mseArr := Platt(tsYhat, tsYfold, tsYhat, tmpLamda)
+		for q := 0; q < nCol; q++ {
+			plattRobustMeasure[c].Set(p, q, plattRobustMeasure[c].At(p, q)+mseArr[q])
+			if p == 0 {
+				minMSE[q] = mseArr[q]
+				minMSElamda[q] = plattRobustLamda[p]
+			} else {
+				if mseArr[q] < minMSE[q] {
+					minMSE[q] = mseArr[q]
+					minMSElamda[q] = plattRobustLamda[p]
+				}
+			}
+		}
+	}
+	mutex.Unlock()
+
+	tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
+	//raw thres added
+	rawBeta := FscoreBeta(tsYfold, tsYhat)
+	rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
+	//tsYhat, rawThres = QuantileNorm(tsYhat, rawThres, true)
+	tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
+	//accum to add information for KNN calibaration
+	mutex.Lock()
+	AccumTsYdata(iFold, c, colSum, rawTsYhat, tsYfold, tsX, indAccum, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, rawThres)
+	mutex.Unlock()
+}
+
+func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int, nKnn int, trainMeasure *mat64.Dense, globalBetaRaw *mat64.Dense, globalBetaKnn *mat64.Dense, i int, yPlattSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold := SubSetTrain(i, yPlattSet[c], YhPlattSet[c], yPredSet[c], xSet[c], iFoldMarker[c])
+	//calculate platt scaled tsYhat again for measures
+	_, nCol := tsYhat.Caps()
+	minMSElamda := make([]float64, nCol)
+	minMSE := make([]float64, nCol)
+	for p := 0; p < len(plattRobustLamda); p++ {
+		for q := 0; q < nCol; q++ {
+			if p == 0 {
+				minMSE[q] = plattRobustMeasure[c].At(p, q)
+				minMSElamda[q] = plattRobustLamda[p]
+			} else {
+				if plattRobustMeasure[c].At(p, q) < minMSE[q] {
+					minMSE[q] = plattRobustMeasure[c].At(p, q)
+					minMSElamda[q] = plattRobustLamda[p]
+				}
+			}
+		}
+	}
+	tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
+	tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
+	beta := FscoreBeta(tsYfold, tsYhat)
+	rawThres := FscoreThres(tsYfold, tsYhat, beta)
+	tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
+	accuracy, microF1, microAupr, macroAupr, _, optScore, firstAupr := Report(tsYfold, tsYhat, rawThres, rankCut, false)
+	mutex.Lock()
+	for p := 0; p < nLabel; p++ {
+		globalBetaRaw.Set(c, p, globalBetaRaw.At(c, p)+beta.At(0, p))
+	}
+	trainMeasure.Set(c, 0, float64(k))
+	trainMeasure.Set(c, 1, lamda)
+	trainMeasure.Set(c, 2, trainMeasure.At(c, 2)+1.0)
+	trainMeasure.Set(c, 3, trainMeasure.At(c, 3)+accuracy)
+	trainMeasure.Set(c, 5, trainMeasure.At(c, 5)+microF1)
+	trainMeasure.Set(c, 7, trainMeasure.At(c, 7)+microAupr)
+	trainMeasure.Set(c, 9, trainMeasure.At(c, 9)+macroAupr)
+	trainMeasure.Set(c, 11, trainMeasure.At(c, 11)+optScore)
+	trainMeasure.Set(c, 13, trainMeasure.At(c, 13)+firstAupr)
+	mutex.Unlock()
+	//probability to be recalibrated for label dependency, subset train by fold
+	if nKnn > 0 {
+		tsYhat = MultiLabelRecalibrate(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls, wg, mutex)
+		rawBeta := FscoreBeta(tsYfold, tsYhat)
+		rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
+		tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
+		//update MultiLabelRecalibrate tsYhat to YhPlattSet
+		YhPlattSetUpdate(i, c, YhPlattSetCalibrated, tsYhat, iFoldMarker[c])
+		accuracy, microF1, microAupr, macroAupr, _, optScore, firstAupr = Report(tsYfold, tsYhat, rawThres, rankCut, false)
+		mutex.Lock()
+		for p := 0; p < nLabel; p++ {
+			globalBetaKnn.Set(c, p, globalBetaKnn.At(c, p)+rawBeta.At(0, p))
+		}
+		trainMeasure.Set(c, 4, trainMeasure.At(c, 4)+accuracy)
+		trainMeasure.Set(c, 6, trainMeasure.At(c, 6)+microF1)
+		trainMeasure.Set(c, 8, trainMeasure.At(c, 8)+microAupr)
+		trainMeasure.Set(c, 10, trainMeasure.At(c, 10)+macroAupr)
+		trainMeasure.Set(c, 12, trainMeasure.At(c, 12)+optScore)
+		trainMeasure.Set(c, 14, trainMeasure.At(c, 14)+firstAupr)
+		mutex.Unlock()
+	}
 }

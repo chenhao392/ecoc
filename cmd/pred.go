@@ -22,7 +22,6 @@ package cmd
 
 import (
 	"github.com/chenhao392/ecoc/src"
-	"github.com/gonum/matrix/mat64"
 	"github.com/spf13/cobra"
 	"log"
 	"math"
@@ -132,7 +131,7 @@ var predCmd = &cobra.Command{
 		kSet := []int{nDim}
 
 		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold, 10, true)
+		folds := src.SOIS(trYdata, nFold, 10, 10, true)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
 
@@ -144,12 +143,8 @@ var predCmd = &cobra.Command{
 		}
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
-		//measure matrix
-		nL := nK * len(lamdaSet)
-		trainMeasure := mat64.NewDense(nL, 15, nil)
-		testMeasure := mat64.NewDense(1, 9, nil)
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")

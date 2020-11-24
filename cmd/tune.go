@@ -22,7 +22,6 @@ package cmd
 
 import (
 	"github.com/chenhao392/ecoc/src"
-	"github.com/gonum/matrix/mat64"
 	"github.com/spf13/cobra"
 	"log"
 	"math"
@@ -122,6 +121,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		kSet, _, lamdaSet := src.HyperParameterSet(nLabel, 0.025, 0.225, 8)
 		//_, sigmaFctsSet2, _ := src.HyperParameterSet(nLabel, 0.005, 0.025, 4)
 		//sigmaFctsSet = append(sigmaFctsSet2, sigmaFctsSet...)
+
 		//min dims, potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
 		nK := 0
@@ -132,23 +132,18 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		}
 
 		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold, 10, true)
+		folds := src.SOIS(trYdata, nFold, 10, 0, true)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
-		//nested cv training data propagation on nwtworks
+		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
 			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}
-
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
-		//measure matrix
-		nL := nK * len(lamdaSet)
-		trainMeasure := mat64.NewDense(nL, 15, nil)
-		testMeasure := mat64.NewDense(1, 9, nil)
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, trainMeasure, testMeasure, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")

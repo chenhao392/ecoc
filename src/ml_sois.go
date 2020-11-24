@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type combineList struct {
@@ -22,20 +23,23 @@ type combine struct {
 	Combine []int
 }
 
-func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int][]int) {
+func single_SOIS(subFolds map[int]map[int][]int, idxFold int, trYdata *mat64.Dense, nFold int, ratio int, minPosPerFold int, isOutInfo bool, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	tmpFold := SOIS(trYdata, nFold, ratio, minPosPerFold, isOutInfo)
+	mutex.Lock()
+	subFolds[idxFold] = tmpFold
+	mutex.Unlock()
+}
+
+func SOIS(trY *mat64.Dense, nFold int, ratio int, minPosPerFold int, isOutInfo bool) (folds map[int][]int) {
 	nRow, nLabel := trY.Caps()
 	rowUsed := make(map[int]bool)
 	allCombine := make(map[string]float64)
 	perRowCombine := make(map[int][][]int)
 	sampleWithCombineMap := make(map[string]combineList)
 	allNegRow := make([]int, 0)
-	lRatio, _ := labelRatio(trY) //label scores for ranking most minority label (pairs) first
-	//init folds
-	folds = make(map[int][]int)
-	for i := 0; i < nFold; i++ {
-		tmp := make([]int, 0)
-		folds[i] = tmp
-	}
+	lRatio, colSum, _ := labelRatio(trY) //label scores for ranking most minority label (pairs) first
+	folds, rowUsed = overSampleMinorLabel(trY, minPosPerFold, nFold, colSum)
 	//pseudo rand Ints for avoiding a timesteamp rand related anomaly in some runs
 	//instances were non-randomly distributed way away from random
 	rand.Seed(1)
@@ -44,10 +48,9 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int
 		n := rand.Int()
 		randInts = append(randInts, n)
 	}
-
+	//init stats
 	for rowIdx := 0; rowIdx < nRow; rowIdx++ {
 		key, sum, combines := genCombines(trY.RawRowView(rowIdx), lRatio)
-		rowUsed[rowIdx] = false
 		if sum == 0.0 {
 			allNegRow = append(allNegRow, rowIdx)
 			continue
@@ -103,7 +106,9 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, isOutInfo bool) (folds map[int
 		}
 	}
 
-	//folds
+	//update stats to match the over sampled rows
+	sampleWithCombineMap, perCombinePerFold, perLabelPerFold, perFold = updateStatAfterOverSampling(nFold, rowUsed, sampleWithCombineMap, perRowCombine, perCombinePerFold, perLabelPerFold, perFold)
+	//subseting to folds
 	key := mostDemandCombine(sampleWithCombineMap)
 	for key != "" {
 		//log.Print("Choose key: ", key, " with Sum ", sampleWithCombineMap[key].Sum, " and Count ", sampleWithCombineMap[key].Count)
@@ -327,11 +332,11 @@ func genCombines(rowVec []float64, labelRatio map[int]float64) (key string, sum 
 	return key, sum, roSets
 }
 
-func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, combineScore map[string]float64) {
+func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, colSum *mat64.Dense, combineScore map[string]float64) {
 	labelScore = make(map[int]float64, 0)
 	combineScore = make(map[string]float64, 0)
 	nRow, nCol := trY.Caps()
-	colSum := mat64.NewDense(1, nCol, nil)
+	colSum = mat64.NewDense(1, nCol, nil)
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nCol; j++ {
 			if trY.At(i, j) == 1.0 {
@@ -360,7 +365,7 @@ func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, combineScore map[
 			combineScore[ele] = labelScore[i] + labelScore[j]
 		}
 	}
-	return labelScore, combineScore
+	return labelScore, colSum, combineScore
 }
 
 func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, nFold int, thresRatio float64) (minorLabelFold int, isMinorLabel bool) {
@@ -415,4 +420,215 @@ func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64
 	}
 
 	return minorLabelFold, isMinorLabel
+}
+
+func overSampleMinorLabel(trY *mat64.Dense, minPosPerFold int, nFold int, colSum *mat64.Dense) (folds map[int][]int, rowUsed map[int]bool) {
+	nRow, nLabel := trY.Caps()
+	minPos := float64(minPosPerFold * nFold)
+	perLabelRequired := make(map[int]float64)
+	rowUsed = make(map[int]bool)
+	//init folds
+	folds = make(map[int][]int)
+	for i := 0; i < nFold; i++ {
+		tmp := make([]int, 0)
+		folds[i] = tmp
+	}
+	for i := 0; i < nRow; i++ {
+		rowUsed[i] = false
+	}
+	//minimum pos instance per fold
+	for i := 0; i < nLabel; i++ {
+		if colSum.At(0, i) < minPos {
+			perLabelRequired[i] = 1.0 + (minPos-colSum.At(0, i))/float64(nFold)
+		} else {
+			perLabelRequired[i] = 0.0
+		}
+	}
+	//sort the demanding label
+	var sortMap []kv
+	for i := 0; i < nLabel; i++ {
+		sortMap = append(sortMap, kv{i, perLabelRequired[i]})
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value > sortMap[j].Value
+	})
+	//start with the most demanding label
+	for i := 0; i < nLabel; i++ {
+		idx := sortMap[i].Key
+		//break when label not demanding over sampling
+		if perLabelRequired[idx] <= 0.0 {
+			break
+		} else {
+			for p := 0; p < nRow; p++ {
+				//row with the demanding minor label
+				if trY.At(p, idx) == 1.0 && !rowUsed[p] {
+					rowUsed[p] = true
+					//row pushed to all folds
+					for j := 0; j < nFold; j++ {
+						folds[j] = append(folds[j], p)
+					}
+					//updating perLabelRequired counts for all minor label
+					for q := 0; q < nLabel; q++ {
+						if trY.At(p, q) == 1.0 {
+							perLabelRequired[q] -= 1.0
+						}
+					}
+				}
+			}
+		}
+	}
+	//
+	return folds, rowUsed
+}
+
+func updateStatAfterOverSampling(nFold int, rowUsed map[int]bool, sampleWithCombineMap map[string]combineList, perRowCombine map[int][][]int, perCombinePerFold map[int]map[string]float64, perLabelPerFold map[int]map[string]float64, perFold map[int]float64) (sampleWithCombineMap2 map[string]combineList, perCombinePerFold2 map[int]map[string]float64, perLabelPerFold2 map[int]map[string]float64, perFold2 map[int]float64) {
+	//remove this rowIdx in all sampleWithCombineMap
+	//sampleWithCombineMap count -1 as well
+	for rowIdx, isUsed := range rowUsed {
+		if isUsed {
+			for k, cl := range sampleWithCombineMap {
+				for l := 0; l < len(cl.Rows); l++ {
+					if cl.Rows[l] == rowIdx {
+						cl.Rows = remove(cl.Rows, l)
+						cl.Count -= 1
+						sampleWithCombineMap[k] = cl
+						break
+					}
+				}
+			}
+			//change counts in perCombinePerFold for all combine ele touched by rowIdx
+			//record all label elements in this row
+			allLabelInRow := make(map[string]string)
+			for k := 0; k < len(perRowCombine[rowIdx]); k++ {
+				ele2 := strconv.Itoa(perRowCombine[rowIdx][k][0])
+				allLabelInRow[ele2] = ""
+				if len(perRowCombine[rowIdx][k]) == 2 {
+					ele3 := strconv.Itoa(perRowCombine[rowIdx][k][1])
+					ele2 = ele2 + "," + ele3
+					allLabelInRow[ele3] = ""
+				}
+				for i := 0; i < nFold; i++ {
+					perCombinePerFold[i][ele2] -= 1.0
+				}
+			}
+			//change counts in perLabelPerFold for all label/ele touched by rowIdx
+			for label, _ := range allLabelInRow {
+				for i := 0; i < nFold; i++ {
+					//each label in mostUnderRepFold should be counted the same, thus 1.0 is good
+					perLabelPerFold[i][label] += 1.0
+				}
+			}
+			//change counts in perFold
+			for i := 0; i < nFold; i++ {
+				//used in mostDemandFold when it's a tie in demand Value
+				//to find the fold with least instances
+				//averaging to nFold here won't hurt and keep number positive
+				perFold[i] -= 1.0 / float64(nFold)
+			}
+		}
+	}
+	return sampleWithCombineMap, perCombinePerFold, perLabelPerFold, perFold
+}
+
+func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, randValues []float64) (newTrXdata *mat64.Dense, newTrYdata *mat64.Dense) {
+	nRow, nColX := trXdata.Caps()
+	_, nColY := trYdata.Caps()
+	perLabelRequired := make(map[int]float64)
+	rowUsed := make(map[int]bool)
+	colSum := make(map[int]float64, nColY)
+	trXsyn := make(map[int][]float64)
+	trYsyn := make(map[int][]float64)
+	synIdx := 0
+	meanLabel := 0.0
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nColY; j++ {
+			if trYdata.At(i, j) == 1.0 {
+				meanLabel += 1.0
+				colSum[j] += 1.0
+			}
+		}
+	}
+	meanLabel = 0.25 * meanLabel / float64(nColY)
+	//minimum pos instance per label
+	for i := 0; i < nColY; i++ {
+		if colSum[i] < meanLabel && colSum[i] < 20 {
+			perLabelRequired[i] = 1.0 + (meanLabel - colSum[i])
+		} else {
+			perLabelRequired[i] = 0.0
+		}
+	}
+	//sort the demanding label
+	var sortMap []kv
+	for i := 0; i < nColY; i++ {
+		sortMap = append(sortMap, kv{i, perLabelRequired[i]})
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value > sortMap[j].Value
+	})
+	//start with the most demanding label
+	for i := 0; i < nColY; i++ {
+		idx := sortMap[i].Key
+		//break when label not demanding over sampling
+		if perLabelRequired[idx] <= 0.0 {
+			break
+		} else {
+			for p := 0; p < nRow; p++ {
+				//row with the demanding minor label
+				if trYdata.At(p, idx) == 1.0 && !rowUsed[p] {
+					rowUsed[p] = true
+					//row synthetic from k nearest neighbors in feature set
+					//note 1st instance in DistanceTopK is itself
+					//system rand from range distuv.Uniform{Min: -0.00000001, Max: 0.00000001}
+					//rand values array length is nTr
+					nnIdx := DistanceTopK(nKnn+1, p, trXdata, trXdata)
+					for q := 1; q < len(nnIdx); q++ {
+						tmp := make([]float64, 0)
+						trXsyn[synIdx] = tmp
+						for m := 0; m < nColX; m++ {
+							xEle := trXdata.At(nnIdx[q], m) + 50000000.0*(randValues[p]+0.00000001)*(trXdata.At(nnIdx[0], m)-trXdata.At(nnIdx[q], m))
+							trXsyn[synIdx] = append(trXsyn[synIdx], xEle)
+						}
+						tmp2 := make([]float64, 0)
+						trYsyn[synIdx] = tmp2
+						for m := 0; m < nColY; m++ {
+							trYsyn[synIdx] = append(trYsyn[synIdx], trYdata.At(nnIdx[q], m))
+						}
+						synIdx += 1
+					}
+					//updating perLabelRequired counts for all minor label
+					for q := 0; q < nColY; q++ {
+						if trYdata.At(p, q) == 1.0 {
+							perLabelRequired[q] -= 1.0 * float64(nKnn)
+						}
+					}
+				}
+			}
+		}
+	}
+	synTrXdata := mat64.NewDense(synIdx+1, nColX, nil)
+	synTrYdata := mat64.NewDense(synIdx+1, nColY, nil)
+	nSynPos := make([]int, nColY)
+	for i := 0; i < synIdx; i++ {
+		for j := 0; j < nColX; j++ {
+			synTrXdata.Set(i, j, trXsyn[i][j])
+		}
+		for j := 0; j < nColY; j++ {
+			synTrYdata.Set(i, j, trYsyn[i][j])
+			if trYsyn[i][j] == 1.0 {
+				nSynPos[j] += 1
+			}
+		}
+	}
+	//log number of syn positive instances per label
+	log.Print("\tsynthetic pos label with knn thres ", nKnn, ".")
+	str := ""
+	for j := 0; j < nColY; j++ {
+		str = str + "\t" + strconv.Itoa(nSynPos[j])
+	}
+	log.Print(str)
+	newTrXdata = mat64.NewDense(0, 0, nil)
+	newTrYdata = mat64.NewDense(0, 0, nil)
+	newTrXdata.Stack(trXdata, synTrXdata)
+	newTrYdata.Stack(trYdata, synTrYdata)
+	return newTrXdata, newTrYdata
 }

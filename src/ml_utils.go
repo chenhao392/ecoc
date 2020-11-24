@@ -1037,10 +1037,8 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	microAupr, _, _, _ = ComputeAupr(tsYdataVec, tsYhatVec, 1.0)
 	//agMicroF1
 	agMicroF1 = MicroF1WithThres(tsYdata, tsYhat, thresData, rankCut)
-	//optimal score
-	optScore = math.Sqrt(microAupr * agMicroF1)
-	tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, true)
 	//microF1
+	tsYhatMicro, _ := BinPredByAlpha(tsYhat, rankCut, true)
 	for i := 0; i < nLabel; i++ {
 		f1, tp, fp, fn, tn := ComputeF1_3(tsYdata.ColView(i), tsYhatMicro.ColView(i), 0.99)
 		if isVerbose {
@@ -1065,6 +1063,8 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 			fmt.Printf("%d\t%d\t%d\t%d\t%d\t%.3f\t%.3f\n", i, tpSet[i], fpSet[i], fnSet[i], tnSet[i], microF1Set[i], macroAuprSet[i])
 		}
 	}
+	//optimal score
+	optScore = math.Sqrt(microAupr * microF1)
 	if detectNanInf {
 		fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, agMicroF1)
 		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -1158,11 +1158,12 @@ func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense) {
 	_, nCol := tsYdata.Caps()
 	rankCut := nCol - 1
 	thresData := mat64.NewDense(1, nCol, nil)
-	tmpThresData := mat64.NewDense(1, nCol, nil)
+	//tmpThresData := mat64.NewDense(1, nCol, nil)
 	beta = mat64.NewDense(1, nCol, nil)
 	for i := 0; i < nCol; i++ {
-		beta.Set(0, i, 2.0)
-		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 2.0)
+		aupr, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1)
+		_, _, _, optThres = ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), aupr*4)
+		beta.Set(0, i, aupr*4)
 		thresData.Set(0, i, optThres)
 	}
 	//Accuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
@@ -1172,7 +1173,7 @@ func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense) {
 	score := math.Sqrt(microAupr * microF1)
 	//while loop for optimal microF1
 	notConverged := true
-	maxItr := 3
+	maxItr := 2
 	itr := 0
 	for notConverged {
 		//preAccuracy := Accuracy
@@ -1180,7 +1181,7 @@ func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense) {
 		//preMicroF1 := microF1
 		preScore := score
 		for i := 0; i < nCol; i++ {
-			tmpThresData = thresData
+			tmpThresData := thresData
 			for j := 0; j < len(betaSet); j++ {
 				_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), betaSet[j])
 				tmpThresData.Set(0, i, optThres)
@@ -1336,7 +1337,6 @@ func RefillIndCol(tsX *mat64.Dense, ind []int) (tsX2 *mat64.Dense) {
 
 func AccumTsYdata(iFold int, c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY *mat64.Dense, tsX *mat64.Dense, indAccum []int, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, rawThres *mat64.Dense) {
 	nCol := colSum.Len()
-	//_, nColX := tsX.Caps()
 	nRow, _ := tsYh.Caps()
 	tsYh2 := mat64.NewDense(nRow, nCol, nil)
 	//tsX can be modified as AccumTsYdata is after EcocRun
@@ -1344,7 +1344,6 @@ func AccumTsYdata(iFold int, c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY
 	//empty as it will be filled in YhPlattSetUpdate
 	tsYhCalib2 := mat64.NewDense(nRow, nCol, nil)
 	tsY2 := mat64.NewDense(nRow, nCol, nil)
-	//tsX2 := mat64.NewDense(nRow, nColX, nil)
 	predY2 := mat64.NewDense(nRow, nCol, nil)
 	//fold marker
 	iFoldmat2 := mat64.NewDense(nRow, 1, nil)
@@ -1371,24 +1370,12 @@ func AccumTsYdata(iFold int, c int, colSum *mat64.Vector, tsYh *mat64.Dense, tsY
 			}
 		}
 	}
-	//tsX
-	//for j := 0; j < nColX; j++ {
-	//	for i := 0; i < nRow; i++ {
-	//		tsX2.Set(i, j, tsX.At(i, j))
-	//	}
-	//}
 
-	//whether the matrix is defined previously
+	//is the matrix defined previously?
 	Yh, isYh := YhPlattSet[c]
 	YhCalib, isYh := YhPlattSetCalibrated[c]
 	Y, _ := yPlattSet[c]
 	X, _ := xSet[c]
-	//if isX {
-	//	a, b := X.Caps()
-	//	d, e := tsX.Caps()
-	//	fmt.Println("X: ", iFold, c, a, b)
-	//	fmt.Println("tsX: ", d, e)
-	//}
 	iFoldmat := iFoldMarker[c]
 	predY := yPredSet[c]
 	if !isYh {

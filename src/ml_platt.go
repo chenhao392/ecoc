@@ -777,6 +777,8 @@ func single_MultiLabelRecalibrate(kNN int, i int, nCol int, tsYhatCal *mat64.Den
 	}
 }
 
+//select top k rows in yPredTrain that is closed to row rowIdx in tsYhat
+//hassanat distance, both yPredTrain and tsYhat contain same number of cols
 type ByValue []kv
 
 func (a ByValue) Len() int           { return len(a) }
