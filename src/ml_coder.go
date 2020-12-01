@@ -41,8 +41,9 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[
 	mutex.Unlock()
 }
 
-func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, folds map[int][]int, nK int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
+func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, folds map[int][]int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
 	YhSet = make(map[int]*mat64.Dense)
+	nK := len(kSet)
 	sigmaFctsSet := lamdaToSigmaFctsSet(lamdaSet)
 	colSum, trYdata = posFilter(trYdata)
 	tsYdata = PosSelect(tsYdata, colSum)
@@ -53,11 +54,11 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//for rand in MLSMOTE
 	randValues := RandListFromUniDist(nTr, nFea)
 	//multi-label SMOTE
-	trXdata, trYdata = MLSMOTE(trXdata, trYdata, 5, randValues)
+	//trXdata, trYdata = MLSMOTE(trXdata, trYdata, 5, randValues)
 	//redefine vars and rands after MLSMOTE
-	nTr, nFea = trXdata.Caps()
-	nTs, _ = tsXdata.Caps()
-	randValues = RandListFromUniDist(nTr, nFea)
+	//nTr, nFea = trXdata.Caps()
+	//nTs, _ = tsXdata.Caps()
+	//randValues = RandListFromUniDist(nTr, nFea)
 	idxPerm := rand.Perm(nTr)
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
@@ -92,7 +93,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 			}
 		}
 	}
-	log.Print("step 1: linear code calculated.")
+	log.Print("step 1: linear coding calculated.")
 	//cca
 	B := mat64.NewDense(0, 0, nil)
 	if !reg {
@@ -107,7 +108,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		//_, B = ccaProjectTwoMatrix(trXdataB, trYdata)
 		B = ccaProject(trXdataB, trYdata)
 	}
-	log.Print("step 2: cca code calculated.")
+	log.Print("step 2: cca coding calculated.")
 
 	//CCA code
 	trY_Cdata := mat64.NewDense(0, 0, nil)
@@ -121,7 +122,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	}
 	wg.Wait()
 	log.Print("step 3: cg decoding finihsed.")
-	//decoding and step 4
+	//mean field decoding
 	c := 0
 	wg.Add(nK * len(sigmaFctsSet))
 	for k := 0; k < nK; k++ {
@@ -132,6 +133,7 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 		}
 	}
 	wg.Wait()
+	log.Print("step 4: mean field decoding finihsed.")
 	runtime.GC()
 	return YhSet, colSum
 }
@@ -189,6 +191,15 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 			//So yes for this implementation, as the penalty not mentioned in matlab code
 			//X: features, Y:label vector, bias,solver,cost,sensitiveness,stop,class_pelnalty
 			//LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 0, 1.0/lamda[i], 0.1, 0.001, nil)
+			//nY, nX := trainFold[j].Y.Caps()
+			//nPos := 0
+			//for p := 0; p < nY; p++ {
+			//	if trainFold[j].Y.At(p, 0) == 1.0 {
+			//		nPos += 1
+			//	}
+			//}
+			//a, b := trainFold[j].X.Caps()
+			//log.Print("lamda: ", i, " ,fold ", j, ", nPos ", nPos, "Dim X ", a, b, "Dim Y ", nY, nX)
 			LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 1, 1.0/lamda[i], 0.1, 0.00001, nil)
 			w := LRmodel.W()
 			lastW := []float64{Pop(&w)}

@@ -530,7 +530,7 @@ func updateStatAfterOverSampling(nFold int, rowUsed map[int]bool, sampleWithComb
 	return sampleWithCombineMap, perCombinePerFold, perLabelPerFold, perFold
 }
 
-func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, randValues []float64) (newTrXdata *mat64.Dense, newTrYdata *mat64.Dense) {
+func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio float64, randValues []float64) (newTrXdata *mat64.Dense, newTrYdata *mat64.Dense) {
 	nRow, nColX := trXdata.Caps()
 	_, nColY := trYdata.Caps()
 	perLabelRequired := make(map[int]float64)
@@ -548,10 +548,10 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, randValues []
 			}
 		}
 	}
-	meanLabel = 0.25 * meanLabel / float64(nColY)
 	//minimum pos instance per label
+	meanLabel = mlsRatio * meanLabel / float64(nColY)
 	for i := 0; i < nColY; i++ {
-		if colSum[i] < meanLabel && colSum[i] < 20 {
+		if colSum[i] < meanLabel {
 			perLabelRequired[i] = 1.0 + (meanLabel - colSum[i])
 		} else {
 			perLabelRequired[i] = 0.0
@@ -573,6 +573,10 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, randValues []
 			break
 		} else {
 			for p := 0; p < nRow; p++ {
+				//break if the idx label reached the required number
+				if perLabelRequired[idx] <= 0 {
+					break
+				}
 				//row with the demanding minor label
 				if trYdata.At(p, idx) == 1.0 && !rowUsed[p] {
 					rowUsed[p] = true
@@ -591,44 +595,61 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, randValues []
 						tmp2 := make([]float64, 0)
 						trYsyn[synIdx] = tmp2
 						for m := 0; m < nColY; m++ {
-							trYsyn[synIdx] = append(trYsyn[synIdx], trYdata.At(nnIdx[q], m))
+							tmpL := 0.0
+							if trYdata.At(nnIdx[0], m) == 1.0 {
+								tmpL = 1.0
+							}
+							if trYdata.At(nnIdx[q], m) == 1.0 {
+								tmpL = 1.0
+							}
+							trYsyn[synIdx] = append(trYsyn[synIdx], tmpL)
+						}
+						//updating perLabelRequired counts for all minor label
+						for q := 0; q < nColY; q++ {
+							if trYdata.At(p, q) == 1.0 {
+								perLabelRequired[q] -= 1.0
+							}
 						}
 						synIdx += 1
-					}
-					//updating perLabelRequired counts for all minor label
-					for q := 0; q < nColY; q++ {
-						if trYdata.At(p, q) == 1.0 {
-							perLabelRequired[q] -= 1.0 * float64(nKnn)
+						if perLabelRequired[idx] <= 0 {
+							break
 						}
 					}
 				}
 			}
 		}
 	}
-	synTrXdata := mat64.NewDense(synIdx+1, nColX, nil)
-	synTrYdata := mat64.NewDense(synIdx+1, nColY, nil)
-	nSynPos := make([]int, nColY)
-	for i := 0; i < synIdx; i++ {
-		for j := 0; j < nColX; j++ {
-			synTrXdata.Set(i, j, trXsyn[i][j])
-		}
-		for j := 0; j < nColY; j++ {
-			synTrYdata.Set(i, j, trYsyn[i][j])
-			if trYsyn[i][j] == 1.0 {
-				nSynPos[j] += 1
+	//check if mlsmote or not
+	if synIdx > 0 {
+		synTrXdata := mat64.NewDense(synIdx, nColX, nil)
+		synTrYdata := mat64.NewDense(synIdx, nColY, nil)
+		nSynPos := make([]int, nColY)
+		for i := 0; i < synIdx; i++ {
+			for j := 0; j < nColX; j++ {
+				synTrXdata.Set(i, j, trXsyn[i][j])
+			}
+			for j := 0; j < nColY; j++ {
+				synTrYdata.Set(i, j, trYsyn[i][j])
+				if trYsyn[i][j] == 1.0 {
+					nSynPos[j] += 1
+				}
 			}
 		}
+		//log number of syn positive instances per label
+		log.Print("\tsynthetic pos label with knn thres ", nKnn, ".")
+		str := ""
+		for j := 0; j < nColY; j++ {
+			str = str + "\t" + strconv.Itoa(nSynPos[j])
+		}
+		log.Print(str)
+		newTrXdata = mat64.NewDense(0, 0, nil)
+		newTrYdata = mat64.NewDense(0, 0, nil)
+		newTrXdata.Stack(trXdata, synTrXdata)
+		newTrYdata.Stack(trYdata, synTrYdata)
+	} else {
+		log.Print("\tsynthetic pos label not generated, no label below mlsRatio(", mlsRatio, ") * meanLabel(", meanLabel, ").")
+		newTrXdata = trXdata
+		newTrYdata = trYdata
 	}
-	//log number of syn positive instances per label
-	log.Print("\tsynthetic pos label with knn thres ", nKnn, ".")
-	str := ""
-	for j := 0; j < nColY; j++ {
-		str = str + "\t" + strconv.Itoa(nSynPos[j])
-	}
-	log.Print(str)
-	newTrXdata = mat64.NewDense(0, 0, nil)
-	newTrYdata = mat64.NewDense(0, 0, nil)
-	newTrXdata.Stack(trXdata, synTrXdata)
-	newTrYdata.Stack(trYdata, synTrYdata)
 	return newTrXdata, newTrYdata
 }

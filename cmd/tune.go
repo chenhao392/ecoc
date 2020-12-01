@@ -75,20 +75,23 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
-		//priorMatrixFiles, _ := cmd.Flags().GetString("p")
 		priorMatrixFiles := ""
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		rankCut, _ := cmd.Flags().GetInt("c")
 		nKnn, _ := cmd.Flags().GetInt("k")
+		nDim, _ := cmd.Flags().GetInt("d")
+		s, _ := cmd.Flags().GetInt("s")
+		lowerLamda, _ := cmd.Flags().GetFloat64("ll")
+		upperLamda, _ := cmd.Flags().GetFloat64("ul")
 		isKnn, _ := cmd.Flags().GetBool("isCali")
-		isFirst, _ := cmd.Flags().GetBool("isFirstLabel")
+		isPerLabel, _ := cmd.Flags().GetBool("isPerLabel")
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 		isDada, _ := cmd.Flags().GetBool("ec")
 		alpha, _ := cmd.Flags().GetFloat64("alpha")
+		mlsRatio, _ := cmd.Flags().GetFloat64("mlsRatio")
 		isVerbose, _ := cmd.Flags().GetBool("v")
-		//isAddPrior, _ := cmd.Flags().GetBool("addPrior")
 		isAddPrior := false
 		fBetaThres := 1.0
 
@@ -110,7 +113,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
-		_, nFea := trXdata.Caps()
+		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
 			log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
@@ -118,18 +121,22 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		}
 
 		//prepare hyperparameter grid
-		kSet, _, lamdaSet := src.HyperParameterSet(nLabel, 0.025, 0.225, 8)
-		//_, sigmaFctsSet2, _ := src.HyperParameterSet(nLabel, 0.005, 0.025, 4)
-		//sigmaFctsSet = append(sigmaFctsSet2, sigmaFctsSet...)
+		_, _, lamdaSet := src.HyperParameterSet(nLabel, lowerLamda, upperLamda, s)
+		//_, _, lamdaSet2 := src.HyperParameterSet(nLabel, 0.005, 0.025, 4)
+		//lamdaSet = append(lamdaSet2, lamdaSet...)
 
 		//min dims, potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
-		nK := 0
-		for k := 0; k < len(kSet); k++ {
-			if kSet[k] < minDims {
-				nK += 1
-			}
+		if nDim >= minDims {
+			nDim = minDims - 1
+			log.Print("number of dimensions larger than number of labels, reduced to ", nDim, ".")
 		}
+		if nDim == 0 {
+			nDim = nLabel - 1
+			log.Print("number of dimensions set to ", nDim, ".")
+		}
+		nK := 1
+		kSet := []int{nDim}
 
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold, 10, 0, true)
@@ -141,9 +148,21 @@ Hyperparameter tuning and benchmarking for the following parameters.
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}
+		//MLSOTE for the folds
+		if mlsRatio > 0.0 {
+			randValues := src.RandListFromUniDist(nTr, nFea)
+			for f := 0; f < nFold; f++ {
+				trXdataTmp, trYdataTmp := src.MLSMOTE(trainFold[f].X, trainFold[f].Y, 5, mlsRatio, randValues)
+				//tsXdataTmp, tsYdataTmp := src.MLSMOTE(testFold[f].X, testFold[f].Y, 5, randValues)
+				trainFold[f].X = trXdataTmp
+				trainFold[f].Y = trYdataTmp
+				//testFold[f].X = tsXdataTmp
+				//testFold[f].Y = tsYdataTmp
+			}
+		}
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")
@@ -156,11 +175,16 @@ func init() {
 	rootCmd.AddCommand(tuneCmd)
 
 	tuneCmd.Flags().Float64("alpha", 0.2, "alpha value for a single label propgation\n")
+	tuneCmd.Flags().Float64("mlsRatio", 0.1, "multi-label SMOTE ratio\n")
 	tuneCmd.Flags().Int("c", 3, "top c predictions for a gene to used\nin multi-label F1 calculation")
+	tuneCmd.Flags().Int("d", 0, "number of CCA dimensions")
+	tuneCmd.Flags().Float64("ll", 0.025, "lower bound, lamda balancing bernoulli and gaussian potentials\n")
+	tuneCmd.Flags().Float64("ul", 0.225, "upper bound, lamda balancing bernoulli and gaussian potentials\n")
+	tuneCmd.Flags().Int("s", 8, "steps for tuning lamda\n")
 	tuneCmd.Flags().Bool("ec", false, "experimental label propgation alternative\n(default false)")
 	tuneCmd.Flags().Bool("isCali", false, "nearest neighbors calibration for the predictions\n(default false)")
-	tuneCmd.Flags().Bool("isFirstLabel", false, "training objection as the aupr of first label/column\n(default false)")
-	tuneCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor multiabel probability calibration\n")
+	tuneCmd.Flags().Bool("isPerLabel", false, "training objection as the auprs of labels/columns\n(default false)")
+	tuneCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor post-prediction calibration\n")
 	tuneCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")
 	tuneCmd.Flags().Int("nFold", 2, "number of folds for cross validation\n")
 	tuneCmd.Flags().Bool("r", false, "experimental regularized CCA\n(default false)")
@@ -170,6 +194,4 @@ func init() {
 	tuneCmd.Flags().String("tsY", "data/tsMatrix.txt", "test label matrix")
 	tuneCmd.Flags().Bool("v", false, "verbose outputs")
 
-	//tuneCmd.Flags().String("p", "", "addtional prior file, use together with addPrior flag")
-	//tuneCmd.PersistentFlags().Bool("addPrior", false, "adding additional priors, default false")
 }

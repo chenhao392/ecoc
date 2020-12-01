@@ -83,7 +83,7 @@ var predCmd = &cobra.Command{
 		nDim, _ := cmd.Flags().GetInt("d")
 		lamda, _ := cmd.Flags().GetFloat64("l")
 		isKnn, _ := cmd.Flags().GetBool("isCali")
-		isFirst, _ := cmd.Flags().GetBool("isFirstLabel")
+		isPerLabel, _ := cmd.Flags().GetBool("isPerLabel")
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 		isDada, _ := cmd.Flags().GetBool("ec")
@@ -123,9 +123,8 @@ var predCmd = &cobra.Command{
 		//min dims, potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
 		if nDim >= minDims {
-			log.Print("number of dimensions larger than number of labels, reducing...")
 			nDim = minDims - 1
-			log.Print("number of dimensions set to ", nDim, ".")
+			log.Print("number of dimensions larger than number of labels, reduced to ", nDim, ".")
 		}
 		nK := 1
 		kSet := []int{nDim}
@@ -144,7 +143,7 @@ var predCmd = &cobra.Command{
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isFirst, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")
@@ -155,11 +154,12 @@ var predCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(predCmd)
 	predCmd.Flags().Float64("alpha", 0.2, "alpha value for a single label propgation\n")
+	predCmd.Flags().Float64("mlsRatio", 0.1, "multi-label SMOTE ratio\n")
 	predCmd.Flags().Int("c", 3, "top c predictions for a gene to used\nin multi-label F1 calculation")
 	predCmd.Flags().Int("d", 1, "number of dimensions")
 	predCmd.Flags().Bool("ec", false, "experimental label propgation alternative\n(default false)")
 	predCmd.Flags().Bool("isCali", false, "nearest neighbors calibration for the predictions\n(default false)")
-	predCmd.Flags().Bool("isFirstLabel", false, "training objection as the aupr of first label/column\n(default false)")
+	predCmd.Flags().Bool("isPerLabel", false, "training objection as the aupr of first label/column\n(default false)")
 	predCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor multiabel probability calibration\n")
 	predCmd.Flags().Float64("l", 1.0, "lamda balancing bernoulli and gaussian potentials\n")
 	predCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")

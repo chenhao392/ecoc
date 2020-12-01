@@ -62,9 +62,12 @@ Calculate per label benchmark scores.
 		for i := 0; i < nLabel; i++ {
 			thresData.Set(0, i, 0.5)
 		}
-		accuracy, microF1, microAupr, macroAupr, agMicroAupr, _, firstAupr := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
-		//fmt.Println(accuracy, microF1, microAupr, macroAupr)
-		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f agMicroAupr: %1.3f firstAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, agMicroAupr, firstAupr)
+		detectNanInf := src.NanFilter(tsYhat)
+		accuracy, microF1, microAupr, macroAupr, agMicroAupr, _, macroAuprSet := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
+		if detectNanInf {
+			fmt.Println("NaN or Inf found.")
+		}
+		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f agMicroAupr: %1.3f firstAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, agMicroAupr, macroAuprSet[0])
 	},
 }
 
