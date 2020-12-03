@@ -94,6 +94,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		isVerbose, _ := cmd.Flags().GetBool("v")
 		isAddPrior := false
 		fBetaThres := 1.0
+		isAutoBeta := true
 
 		//result dir and logging
 		logFile := src.Init(resFolder)
@@ -122,8 +123,10 @@ Hyperparameter tuning and benchmarking for the following parameters.
 
 		//prepare hyperparameter grid
 		_, _, lamdaSet := src.HyperParameterSet(nLabel, lowerLamda, upperLamda, s)
-		//_, _, lamdaSet2 := src.HyperParameterSet(nLabel, 0.005, 0.025, 4)
-		//lamdaSet = append(lamdaSet2, lamdaSet...)
+		if isPerLabel {
+			_, _, lamdaSet2 := src.HyperParameterSet(nLabel, 0.0, 0.025, 1)
+			lamdaSet = append(lamdaSet2, lamdaSet...)
+		}
 
 		//min dims, potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
@@ -162,7 +165,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		}
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")

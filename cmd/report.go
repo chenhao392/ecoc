@@ -67,7 +67,7 @@ Calculate per label benchmark scores.
 		if detectNanInf {
 			fmt.Println("NaN or Inf found.")
 		}
-		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f agMicroAupr: %1.3f firstAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, agMicroAupr, macroAuprSet[0])
+		fmt.Printf("acc: %1.3f microF1: %1.3f microAupr: %1.3f macroAupr: %1.3f agMicroF1: %1.3f firstAupr: %1.3f\n", accuracy, microF1, microAupr, macroAupr, agMicroAupr, macroAuprSet[0])
 	},
 }
 

@@ -534,7 +534,8 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 	nRow, nColX := trXdata.Caps()
 	_, nColY := trYdata.Caps()
 	perLabelRequired := make(map[int]float64)
-	rowUsed := make(map[int]bool)
+	perLabelRepeat := make(map[int]int)
+	//rowUsed := make(map[int]bool)
 	colSum := make(map[int]float64, nColY)
 	trXsyn := make(map[int][]float64)
 	trYsyn := make(map[int][]float64)
@@ -553,6 +554,7 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 	for i := 0; i < nColY; i++ {
 		if colSum[i] < meanLabel {
 			perLabelRequired[i] = 1.0 + (meanLabel - colSum[i])
+			perLabelRepeat[i] = int(perLabelRequired[i]/colSum[i]) + 1
 		} else {
 			perLabelRequired[i] = 0.0
 		}
@@ -568,51 +570,64 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 	//start with the most demanding label
 	for i := 0; i < nColY; i++ {
 		idx := sortMap[i].Key
+		//selecting instance pos with this label
+		trXsub, trYsub := SubDataByPos(idx, colSum, trXdata, trYdata)
 		//break when label not demanding over sampling
 		if perLabelRequired[idx] <= 0.0 {
 			break
 		} else {
-			for p := 0; p < nRow; p++ {
+			nRowSub, _ := trYsub.Caps()
+			rTick := 0
+			for p := 0; p < nRowSub; p++ {
 				//break if the idx label reached the required number
 				if perLabelRequired[idx] <= 0 {
 					break
 				}
 				//row with the demanding minor label
-				if trYdata.At(p, idx) == 1.0 && !rowUsed[p] {
-					rowUsed[p] = true
+				//if trYdata.At(p, idx) == 1.0 && !rowUsed[p] {
+				if trYsub.At(p, idx) == 1.0 {
+					//rowUsed[p] = true
 					//row synthetic from k nearest neighbors in feature set
 					//note 1st instance in DistanceTopK is itself
 					//system rand from range distuv.Uniform{Min: -0.00000001, Max: 0.00000001}
 					//rand values array length is nTr
-					nnIdx := DistanceTopK(nKnn+1, p, trXdata, trXdata)
+					if nKnn+1 > nRowSub {
+						nKnn = nRowSub - 1
+						log.Print("WARN: number of MLSMOTE to generate larger than number of instance for some label.")
+					}
+					nnIdx := DistanceTopK(nKnn+1, p, trXsub, trXsub)
 					for q := 1; q < len(nnIdx); q++ {
-						tmp := make([]float64, 0)
-						trXsyn[synIdx] = tmp
-						for m := 0; m < nColX; m++ {
-							xEle := trXdata.At(nnIdx[q], m) + 50000000.0*(randValues[p]+0.00000001)*(trXdata.At(nnIdx[0], m)-trXdata.At(nnIdx[q], m))
-							trXsyn[synIdx] = append(trXsyn[synIdx], xEle)
-						}
-						tmp2 := make([]float64, 0)
-						trYsyn[synIdx] = tmp2
-						for m := 0; m < nColY; m++ {
-							tmpL := 0.0
-							if trYdata.At(nnIdx[0], m) == 1.0 {
-								tmpL = 1.0
+						for n := 0; n < perLabelRepeat[idx]; n++ {
+							tmp := make([]float64, 0)
+							trXsyn[synIdx] = tmp
+							for m := 0; m < nColX; m++ {
+								xEle := trXsub.At(nnIdx[q], m) + 50000000.0*(randValues[rTick]+0.00000001)*(trXsub.At(nnIdx[0], m)-trXsub.At(nnIdx[q], m))
+								trXsyn[synIdx] = append(trXsyn[synIdx], xEle)
 							}
-							if trYdata.At(nnIdx[q], m) == 1.0 {
-								tmpL = 1.0
+							tmp2 := make([]float64, 0)
+							trYsyn[synIdx] = tmp2
+							for m := 0; m < nColY; m++ {
+								tmpL := 0.0
+								if trYsub.At(nnIdx[0], m) == 1.0 {
+									//updating perLabelRequired counts for all minor label
+									perLabelRequired[m] -= 1.0
+									tmpL = 1.0
+								}
+								if trYsub.At(nnIdx[q], m) == 1.0 {
+									//updating perLabelRequired counts for all minor label
+									perLabelRequired[m] -= 1.0
+									tmpL = 1.0
+								}
+								trYsyn[synIdx] = append(trYsyn[synIdx], tmpL)
 							}
-							trYsyn[synIdx] = append(trYsyn[synIdx], tmpL)
-						}
-						//updating perLabelRequired counts for all minor label
-						for q := 0; q < nColY; q++ {
-							if trYdata.At(p, q) == 1.0 {
-								perLabelRequired[q] -= 1.0
+							synIdx += 1
+							rTick += 1
+							if rTick >= len(randValues) {
+								rTick = 0
 							}
-						}
-						synIdx += 1
-						if perLabelRequired[idx] <= 0 {
-							break
+							if perLabelRequired[idx] <= 0 {
+								break
+							}
 						}
 					}
 				}

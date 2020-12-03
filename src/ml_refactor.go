@@ -145,7 +145,7 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 	return cvTrain, cvTest, trXdataCV, indAccum
 }
 
-func single_AccumTsYdata(globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYhat *mat64.Dense, iFold int, c int, colSum *mat64.Vector, tsX *mat64.Dense, indAccum []int, YhRawSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
+func single_AccumTsYdata(fBetaThres float64, isAutoBeta bool, globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYhat *mat64.Dense, iFold int, c int, colSum *mat64.Vector, tsX *mat64.Dense, indAccum []int, YhRawSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	tsYhat, _ := QuantileNorm(rawTsYhat, mat64.NewDense(0, 0, nil), false)
 	_, nCol := tsYhat.Caps()
@@ -179,7 +179,7 @@ func single_AccumTsYdata(globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYha
 
 	tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
 	//raw thres added
-	rawBeta := FscoreBeta(tsYfold, tsYhat)
+	rawBeta := FscoreBeta(tsYfold, tsYhat, fBetaThres, isAutoBeta)
 	rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
 	tsYhat, _ = SoftThresScale(tsYhat, rawThres)
 	mutex.Lock()
@@ -192,7 +192,7 @@ func single_AccumTsYdata(globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYha
 	mutex.Unlock()
 }
 
-func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int, nKnn int, isKnn bool, trainMeasure *mat64.Dense, globalBeta *mat64.Dense, i int, yPlattSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int, nKnn int, isKnn bool, fBetaThres float64, isAutoBeta bool, trainMeasure *mat64.Dense, globalBeta *mat64.Dense, i int, yPlattSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold := SubSetTrain(i, yPlattSet[c], YhPlattSet[c], yPredSet[c], xSet[c], iFoldMarker[c])
 	//calculate platt scaled tsYhat again for measures
@@ -245,7 +245,7 @@ func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int,
 		tsYhat = MultiLabelRecalibrate_SingleThread(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls)
 		//update MultiLabelRecalibrate tsYhat to YhPlattSetCalibrated
 		YhPlattSetUpdate(i, c, YhPlattSetCalibrated, tsYhat, iFoldMarker[c])
-		rawBeta := FscoreBeta(tsYfold, tsYhat)
+		rawBeta := FscoreBeta(tsYfold, tsYhat, fBetaThres, isAutoBeta)
 		rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
 		tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
 		accuracy, microF1, microAupr, macroAupr, _, optScore, macroAuprSet = Report(tsYfold, tsYhat, rawThres, rankCut, false)
@@ -329,20 +329,24 @@ func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*ma
 		//if not per label, first cBest is the only cBest
 		if !isPerLabel {
 			thres = thresTmp
-			thresKnn = thresKnnTmp
-			plattAB = plattABtmp
 			betaValue = betaValueTmp
-			betaValueKnn = betaValueKnnTmp
+			if isKnn {
+				thresKnn = thresKnnTmp
+				betaValueKnn = betaValueKnnTmp
+			}
+			plattAB = plattABtmp
 			YhPlattScale = YhPlattScaleTmp
 			break
 			//else set thres and plattAB for each label
 		} else {
 			thres.Set(0, i, thresTmp.At(0, i))
-			thresKnn.Set(0, i, thresKnnTmp.At(0, i))
+			betaValue.Set(0, i, betaValueTmp.At(0, i))
+			if isKnn {
+				thresKnn.Set(0, i, thresKnnTmp.At(0, i))
+				betaValueKnn.Set(0, i, betaValueKnnTmp.At(0, i))
+			}
 			plattAB.Set(0, i, plattABtmp.At(0, i))
 			plattAB.Set(1, i, plattABtmp.At(1, i))
-			betaValue.Set(0, i, betaValueTmp.At(0, i))
-			betaValueKnn.Set(0, i, betaValueKnnTmp.At(0, i))
 			for q := 0; q < nLabel; q++ {
 				YhPlattScale.Set(q, i, YhPlattScaleTmp.At(q, i))
 			}
@@ -368,7 +372,7 @@ func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*ma
 	return thres, plattAB, YhPlattScale, thresKnn
 }
 
-func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, nK int, nKnn int, isPerLabel bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
+func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, isAutoBeta bool, nK int, nKnn int, isPerLabel bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
 	//traing data per hyperparameter
 	YhRawSet := make(map[int]*mat64.Dense)
 	YhPlattSet := make(map[int]*mat64.Dense)
@@ -401,6 +405,8 @@ func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, nK int, 
 	testMeasure := mat64.NewDense(1, 8+nLabel, nil)
 
 	for i := 0; i < nFold; i++ {
+		idxToPrint := i + 1
+		log.Print("starting fold ", idxToPrint, " of ", nFold, " folds.")
 		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, lamdaSet, nFold, subFolds[i], wg, mutex)
 		tsYFold := PosSelect(testFold[i].Y, colSum)
 
@@ -409,7 +415,7 @@ func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, nK int, 
 		//accum calculated training data
 		for m := 0; m < nK; m++ {
 			for n := 0; n < len(lamdaSet); n++ {
-				go single_AccumTsYdata(globalBeta, tsYFold, YhSet[c], i, c, colSum, testFold[i].X, testFold[i].IndAccum, YhRawSet, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, plattRobustMeasure, plattRobustLamda, wg, mutex)
+				go single_AccumTsYdata(fBetaThres, isAutoBeta, globalBeta, tsYFold, YhSet[c], i, c, colSum, testFold[i].X, testFold[i].IndAccum, YhRawSet, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, plattRobustMeasure, plattRobustLamda, wg, mutex)
 				c += 1
 			}
 		}
@@ -423,7 +429,7 @@ func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, nK int, 
 		for m := 0; m < nK; m++ {
 			for n := 0; n < len(lamdaSet); n++ {
 				//trainMeasure, globalBeta recorded
-				go single_RecordMeasures(rankCut, kSet[m], lamdaSet[n], c, nLabel, nKnn, isKnn, trainMeasure, globalBeta, i, yPlattSet, YhPlattSet, YhPlattSetCalibrated, yPredSet, xSet, iFoldMarker, plattRobustMeasure, plattRobustLamda, posLabelRls, negLabelRls, wg, mutex)
+				go single_RecordMeasures(rankCut, kSet[m], lamdaSet[n], c, nLabel, nKnn, isKnn, fBetaThres, isAutoBeta, trainMeasure, globalBeta, i, yPlattSet, YhPlattSet, YhPlattSetCalibrated, yPredSet, xSet, iFoldMarker, plattRobustMeasure, plattRobustLamda, posLabelRls, negLabelRls, wg, mutex)
 				c += 1
 			}
 		}

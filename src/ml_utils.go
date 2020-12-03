@@ -17,6 +17,55 @@ type CvFold struct {
 	IndAccum []int
 }
 
+func RatioPosPerLabel(tmpTsYhat *mat64.Dense, tsYdata *mat64.Dense) (idxArr []int) {
+	nRow, nCol := tsYdata.Caps()
+	nPredPos := make([]float64, nCol)
+	nPos := make([]float64, nCol)
+	idxArr = make([]int, nCol)
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nCol; j++ {
+			if tsYdata.At(i, j) == 1.0 {
+				nPos[j] += 1.0
+			}
+			if tmpTsYhat.At(i, j) > 0.5 {
+				nPredPos[j] += 1.0
+			}
+		}
+	}
+	var sortMap []kv
+	for i := 0; i < nCol; i++ {
+		sortMap = append(sortMap, kv{i, nPredPos[i] / nPos[i]})
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value > sortMap[j].Value
+	})
+	for i := 0; i < nCol; i++ {
+		idxArr[i] = sortMap[i].Key
+	}
+	return idxArr
+}
+
+func SubDataByPos(idx int, colSum map[int]float64, trXdata *mat64.Dense, trYdata *mat64.Dense) (trXsub *mat64.Dense, trYsub *mat64.Dense) {
+	_, nColX := trXdata.Caps()
+	nRowY, nColY := trYdata.Caps()
+	nRow := int(colSum[idx])
+	trXsub = mat64.NewDense(nRow, nColX, nil)
+	trYsub = mat64.NewDense(nRow, nColY, nil)
+	idxRow := 0
+	for i := 0; i < nRowY; i++ {
+		if trYdata.At(i, idx) == 1.0 {
+			for j := 0; j < nColY; j++ {
+				trYsub.Set(idxRow, j, trYdata.At(i, j))
+			}
+			for j := 0; j < nColX; j++ {
+				trXsub.Set(idxRow, j, trXdata.At(i, j))
+			}
+			idxRow += 1
+		}
+	}
+	return trXsub, trYsub
+}
+
 func HyperParameterSet(maxDim int, lbL float64, hbL float64, nStep int) (kSet []int, sigmaFctsSet []float64, lamdaSet []float64) {
 
 	//sigmaFctsSet := []float64{4.0, 25.0, 100.0, 400.0, 10000.0}
@@ -709,6 +758,8 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 	for j := 0; j < nCol; j++ {
 		max := 0.0
 		ele := 0.0
+		c := 0
+		var sortMap []kv
 		//max ele
 		for i := 0; i < nRow; i++ {
 			if math.IsInf(thresData.At(0, j), 0) {
@@ -721,6 +772,19 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 			if ele > max {
 				max = ele
 			}
+			if ele < 1.0 && ele > 0.0 {
+				sortMap = append(sortMap, kv{c, ele})
+				c += 1
+			}
+		}
+		//0.75 quantile element below thres
+		sort.Slice(sortMap, func(i, j int) bool {
+			return sortMap[i].Value > sortMap[j].Value
+		})
+		qRank := int(float64(c) * 0.75)
+		qEle := 0.0
+		if qRank > 0 {
+			qEle = sortMap[qRank].Value
 		}
 		//scale ele
 		for i := 0; i < nRow; i++ {
@@ -736,8 +800,10 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 			if ele >= 1.0 {
 				ele = 0.5*ele/max + 0.5
 
-			} else if ele > 0.0 {
-				ele = 0.5 * ele
+			} else if ele > qEle {
+				ele = 0.5 * (ele - qEle) / (1.0 - qEle)
+			} else {
+				ele = 0.0
 			}
 
 			tsYhat2.Set(i, j, ele)
@@ -1112,79 +1178,165 @@ func EleCopy(data *mat64.Dense) (data2 *mat64.Dense) {
 	return data2
 }
 
-func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense) {
-	//init
-	rateSet := []float64{5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25}
-	//betaSet := []float64{4.0, 3.75, 3.5, 3.25, 3.0, 2.75, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25}
-	_, nCol := tsYdata.Caps()
+func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense, fBetaThres float64, isAutoBeta bool) (beta *mat64.Dense) {
+	//init vars
+	rateSet := []float64{2.0, 1.8, 1.6, 1.4, 1.2, 0.8, 0.6, 0.4, 0.2}
+	//rateSet := []float64{100.0, 0.1}
+	nRow, nCol := tsYdata.Caps()
 	rankCut := nCol - 1
 	thresData := mat64.NewDense(1, nCol, nil)
 	macroAupr := []float64{}
-	//tmpThresData := mat64.NewDense(1, nCol, nil)
-	rate := 4.0
 	beta = mat64.NewDense(1, nCol, nil)
+
+	if !isAutoBeta {
+		for i := 0; i < nCol; i++ {
+			beta.Set(0, i, fBetaThres)
+		}
+		return beta
+	}
+
+	//init aScore with midway aRate and aupr -baseline
+	aRate := 1.0
 	for i := 0; i < nCol; i++ {
+		nPos := 0
+		for k := 0; k < nRow; k++ {
+			if tsYdata.At(k, i) == 1.0 {
+				nPos += 1
+			}
+		}
+		baseline := float64(nPos) / float64(nRow)
 		aupr, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1)
+		aupr = aupr - baseline
 		macroAupr = append(macroAupr, aupr)
-		_, _, _, optThres = ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), aupr*rate)
-		beta.Set(0, i, aupr*4)
+		_, _, _, optThres = ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), aupr*aRate)
+		beta.Set(0, i, aupr*aRate)
 		thresData.Set(0, i, optThres)
 	}
 	//Accuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
 	tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, thresData)
 	microAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
 	microF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
-	score := math.Sqrt(microAupr * microF1)
-	//while loop for optimal microF1
-	notConverged := true
-	maxItr := 2
-	itr := 0
-	for notConverged {
-		//preAccuracy := Accuracy
-		//preMicroAupr := microAupr
-		//preMicroF1 := microF1
-		preScore := score
-		for j := 0; j < len(rateSet); j++ {
-			tmpThresData := thresData
-			for i := 0; i < nCol; i++ {
-				_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), rateSet[j]*macroAupr[i])
-				tmpThresData.Set(0, i, optThres)
-			}
-			//tmpAccuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
-			tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, tmpThresData)
-			tmpMicroAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
-			tmpMicroF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
-			tmpScore := math.Sqrt(tmpMicroAupr * tmpMicroF1)
-			//if tmpMicroAupr > microAupr {
-			//if tmpMicroF1 > microF1 {
-			if tmpScore > score {
-				for i := 0; i < nCol; i++ {
-					beta.Set(0, i, rateSet[j]*macroAupr[i])
-				}
-				//microAupr := MicroAuprWithThres(tsYdata, tsYhat, thresData, rankCut)
-				//Accuracy = tmpAccuracy
-				//microAupr = tmpMicroAupr
-				//microF1 = tmpMicroF1
-				score = tmpScore
-				thresData = tmpThresData
-			}
-
+	aScore := math.Sqrt(microAupr * microF1)
+	bScore := 0.0
+	bRate := 0.0
+	tmpScore := 0.0
+	//init bRate and bScore with grid search for sub optimal beta
+	for j := 0; j < len(rateSet); j++ {
+		tmpThresData := thresData
+		for i := 0; i < nCol; i++ {
+			_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), rateSet[j]*macroAupr[i])
+			tmpThresData.Set(0, i, optThres)
 		}
+		//tmpAccuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
+		tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, tmpThresData)
+		tmpMicroAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
+		tmpMicroF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
+		bScore := math.Sqrt(tmpMicroAupr * tmpMicroF1)
+		if bScore > tmpScore {
+			for i := 0; i < nCol; i++ {
+				beta.Set(0, i, rateSet[j]*macroAupr[i])
+			}
+			tmpScore = bScore
+			bRate = rateSet[j]
+			thresData = tmpThresData
+		}
+	}
+	//while loop for optimal score
+	notConverged := true
+	maxItr := 100
+	itr := 0
+	lScore := 0.0 //larger score
+	sScore := 0.0 //smaller score
+	lRate := 0.0  //larger score rate
+	sRate := 0.0  //smaller score rate
+	if aScore > bScore {
+		lRate = aRate
+		sRate = bRate
+		lScore = aScore
+		sScore = bScore
+	} else {
+		lRate = bRate
+		sRate = aRate
+		lScore = bScore
+		sScore = aScore
+	}
+	for notConverged || itr <= maxItr {
+		//test rate, larger /smaller score rates
+		tRate := (lRate + sRate) / 2.0
+		//score for test rate
 		itr += 1
-		if itr <= maxItr {
-			if score > preScore {
-				//if microAupr > preMicroAupr {
-				//if microF1 > preMicroF1 {
-				//preMicroAupr = microAupr
-				//preMicroF1 = microF1
-				preScore = score
+		tmpThresData := thresData
+		for i := 0; i < nCol; i++ {
+			_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), tRate*macroAupr[i])
+			tmpThresData.Set(0, i, optThres)
+		}
+		//tmpAccuracy := AccuracyWithThres(tsYdata, tsYhat, thresData)
+		tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, tmpThresData)
+		tmpMicroAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
+		tmpMicroF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
+		tScore := math.Sqrt(tmpMicroAupr * tmpMicroF1)
+
+		if tScore-sScore >= 0.001 {
+			if tScore > lScore {
+				sScore = lScore
+				sRate = lRate
+				lScore = tScore
+				lRate = tRate
+
 			} else {
-				notConverged = false
+				sScore = tScore
+				sRate = tRate
+			}
+			//update beta with current lRate
+			for i := 0; i < nCol; i++ {
+				beta.Set(0, i, lRate*macroAupr[i])
 			}
 		} else {
 			notConverged = false
 		}
 	}
+	//thres and score using best beta
+	//for i := 0; i < nCol; i++ {
+	//	_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta.At(0, i))
+	//	thresData.Set(0, i, optThres)
+	//}
+	//tmpTsYhat, scaleThresData = SoftThresScale(tsYhat, thresData)
+	//tmpMicroAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
+	//tmpMicroF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
+	//score := math.Sqrt(tmpMicroAupr * tmpMicroF1)
+	//optOrder := RatioPosPerLabel(tmpTsYhat, tsYdata)
+	//per label converge
+	//itr = 0
+	//maxItr = 10
+	//notConverged = true
+	//betaSet := []float64{4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25}
+	//for notConverged && itr <= maxItr {
+	//	itr += 1
+	//	notConverged = false
+	//	for i := 0; i < nCol; i++ {
+	//		idx := optOrder[i]
+	//		tmpThresData := thresData
+	//		for j := 0; j < len(betaSet); j++ {
+	//			_, _, _, optThres := ComputeAupr(tsYdata.ColView(idx), tsYhat.ColView(idx), betaSet[j])
+	//			tmpThresData.Set(0, idx, optThres)
+	//			//tmpScore
+	//			tmpTsYhat, scaleThresData := SoftThresScale(tsYhat, tmpThresData)
+	//			tmpMicroAupr := MicroAuprWithThres(tsYdata, tmpTsYhat, scaleThresData)
+	//			tmpMicroF1 := MicroF1WithThres(tsYdata, tmpTsYhat, scaleThresData, rankCut)
+	//			tmpScore := math.Sqrt(tmpMicroAupr * tmpMicroF1)
+	//			diff := tmpScore - score
+	//			if diff > 0 || (diff > -0.001 && betaSet[j] < beta.At(0, idx)) {
+	//				score = tmpScore
+	//				beta.Set(0, i, betaSet[j])
+	//				thresData = tmpThresData
+	//				notConverged = true
+	//			}
+	//		}
+	//	}
+	//	//refresh optOrder
+	//	tmpTsYhat, _ := SoftThresScale(tsYhat, thresData)
+	//	optOrder = RatioPosPerLabel(tmpTsYhat, tsYdata)
+	//}
 	return beta
 }
 

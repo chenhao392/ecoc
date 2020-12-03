@@ -51,14 +51,8 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	_, nLabel := trYdata.Caps()
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
-	//for rand in MLSMOTE
+	//for rands
 	randValues := RandListFromUniDist(nTr, nFea)
-	//multi-label SMOTE
-	//trXdata, trYdata = MLSMOTE(trXdata, trYdata, 5, randValues)
-	//redefine vars and rands after MLSMOTE
-	//nTr, nFea = trXdata.Caps()
-	//nTs, _ = tsXdata.Caps()
-	//randValues = RandListFromUniDist(nTr, nFea)
 	idxPerm := rand.Perm(nTr)
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
@@ -72,27 +66,13 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//adding bias term for tsXData, trXdata
 	tsXdataB := addBiasTerm(nTs, tsXdata)
 	trXdataB := addBiasTerm(nTr, trXdata)
-	regM := mat64.NewDense(1, nLabel, nil)
+	//regM := mat64.NewDense(1, nLabel, nil)
 	//step 1
+	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
-		wMat, regular, _, label := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), folds, nFold, nFea)
-		regM.Set(0, i, regular)
-		//tsY_Prob
-		element := mat64.NewDense(0, 0, nil)
-		element.Mul(tsXdataB, wMat)
-		for j := 0; j < nTs; j++ {
-			//the -1*element.At() is not making much sense, as the label would be 0/1
-			//according to the origical LIBLINEAR doc
-			//the sign is determined by the label. label 1 would be -1 * weight, label 0 would be weight
-			if label == 1 {
-				value := 1.0 / (1 + math.Exp(-1*element.At(j, 0)))
-				tsY_Prob.Set(j, i, value)
-			} else {
-				value := 1.0 / (1 + math.Exp(1*element.At(j, 0)))
-				tsY_Prob.Set(j, i, value)
-			}
-		}
+		go single_tsYlabel_linear(i, nTs, tsY_Prob, trXdata, trYdata, folds, nFold, nFea, tsXdataB, wg, mutex)
 	}
+	wg.Wait()
 	log.Print("step 1: linear coding calculated.")
 	//cca
 	B := mat64.NewDense(0, 0, nil)
@@ -137,6 +117,31 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	runtime.GC()
 	return YhSet, colSum
 }
+
+func single_tsYlabel_linear(i int, nTs int, tsY_Prob *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, folds map[int][]int, nFold int, nFea int, tsXdataB *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	//wMat, regular, _, label := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), folds, nFold, nFea)
+	wMat, _, _, label := adaptiveTrainLGR_Liblin(trXdata, trYdata.ColView(i), folds, nFold, nFea)
+	//regM.Set(0, i, regular)
+	//tsY_Prob
+	element := mat64.NewDense(0, 0, nil)
+	element.Mul(tsXdataB, wMat)
+	mutex.Lock()
+	for j := 0; j < nTs; j++ {
+		//the -1*element.At() is not making much sense, as the label would be 0/1
+		//according to the origical LIBLINEAR doc
+		//the sign is determined by the label. label 1 would be -1 * weight, label 0 would be weight
+		if label == 1 {
+			value := 1.0 / (1 + math.Exp(-1*element.At(j, 0)))
+			tsY_Prob.Set(j, i, value)
+		} else {
+			value := 1.0 / (1 + math.Exp(1*element.At(j, 0)))
+			tsY_Prob.Set(j, i, value)
+		}
+	}
+	mutex.Unlock()
+}
+
 func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int) (wMat *mat64.Dense, regulator float64, errFinal float64, label int) {
 	//lamda := []float64{0.1, 1, 10}
 	//err := []float64{0, 0, 0}
@@ -190,16 +195,6 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 			//doc in the lineargo lib: If you do not want to change penalty for any of the classes, just set classWeights to nil.
 			//So yes for this implementation, as the penalty not mentioned in matlab code
 			//X: features, Y:label vector, bias,solver,cost,sensitiveness,stop,class_pelnalty
-			//LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 0, 1.0/lamda[i], 0.1, 0.001, nil)
-			//nY, nX := trainFold[j].Y.Caps()
-			//nPos := 0
-			//for p := 0; p < nY; p++ {
-			//	if trainFold[j].Y.At(p, 0) == 1.0 {
-			//		nPos += 1
-			//	}
-			//}
-			//a, b := trainFold[j].X.Caps()
-			//log.Print("lamda: ", i, " ,fold ", j, ", nPos ", nPos, "Dim X ", a, b, "Dim Y ", nY, nX)
 			LRmodel := Train(trainFold[j].X, trainFold[j].Y, 1.0, 1, 1.0/lamda[i], 0.1, 0.00001, nil)
 			w := LRmodel.W()
 			lastW := []float64{Pop(&w)}
@@ -230,13 +225,7 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 	w = append(lastW, w...)
 	wMat = mat64.NewDense(len(w), 1, w)
 	label = LRmodel.Label()
-	//fmt.Println(label)
-	//fmt.Println(wMat)
-	//os.Exit(0)
 	//defer C.free(unsafe.Pointer(LRmodel))
-	//nr_feature := LRmodel.Nfeature() + 1
-	//w := []float64{-1}
-	//w = append(w, LRmodel.W()...)
 	errFinal = err[idx]
 	return wMat, regulator, errFinal, label
 }
@@ -245,17 +234,7 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int]
 	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	//lamda := []float64{0.01, 0.1, 1, 10, 100, 1000, 10000}
-	//err := []float64{0.01, 0, 0, 0, 0, 0, 0}
-	//lamda := make([]float64, 0)
-	//err := make([]float64, 0)
-	//for i := -3.0; i < 6.0; i += 0.25 {
-	//	lamda = append(lamda, math.Pow(10, i))
-	//	err = append(err, 0)
-	//}
 
-	//lamda := []float64{0.1, 1, 10}
-	//err := []float64{0, 0, 0}
 	//cv folds data
 	trainFold := make([]CvFold, nFold)
 	testFold := make([]CvFold, nFold)
@@ -491,7 +470,6 @@ func TrainRLS_Regress_CG(trFoldX *mat64.Dense, trFoldY *mat64.Dense, lamda float
 }
 
 func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, k int, sigmaFcts float64, nLabel int) (tsYhatData []float64) {
-	//func IOC_MFADecoding(nRowTsY int, tsY_Prob *mat64.Dense, tsY_C *mat64.Dense, sigma *mat64.Dense, Bsub *mat64.Dense, k int, sigmaFcts float64, nLabel int) (tsYhatData []float64) {
 	//Q
 	Q := mat64.NewDense(1, nLabel, nil)
 	for i := 0; i < nLabel; i++ {
@@ -502,10 +480,6 @@ func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat6
 	for i := 0; i < k; i++ {
 		sigmaSub.Set(0, i, sigma.At(0, i)*sigmaFcts)
 	}
-	//for i := 0; i < k; i++ {
-	//	sigmaSub.Set(0, i, sigma.At(0, i)*math.Exp((float64(k)-10.0)/(31.416)))
-	//}
-
 	//ind
 	ind := make([]int, nLabel)
 	for i := 0; i < nLabel; i++ {
@@ -560,8 +534,6 @@ func IOC_MFADecoding(nRowTsY int, rowIdx int, tsY_Prob *mat64.Dense, tsY_C *mat6
 		}
 		logPos = logPos - posSum
 		logNeg = logNeg - negSum
-		//logPos = sigmaFcts*logPos - posSum
-		//logNeg = sigmaFcts*logNeg - negSum
 		preQi := Q.At(0, i)
 		newQi := math.Exp(logPos) / (math.Exp(logPos) + math.Exp(logNeg))
 		Q.Set(0, i, newQi)

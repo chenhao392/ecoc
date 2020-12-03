@@ -91,6 +91,7 @@ var predCmd = &cobra.Command{
 		isVerbose, _ := cmd.Flags().GetBool("v")
 		isAddPrior := false
 		fBetaThres := 1.0
+		isAutoBeta := false
 		priorMatrixFiles := ""
 
 		//result dir and logging
@@ -143,7 +144,7 @@ var predCmd = &cobra.Command{
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")
