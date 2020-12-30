@@ -6,7 +6,7 @@ import (
 	"gonum.org/v1/gonum/stat/distuv"
 	"log"
 	"math"
-	"math/rand"
+	//"math/rand"
 	"runtime"
 	"sync"
 )
@@ -27,9 +27,33 @@ func single_IOC_MFADecoding_and_result(nTs int, k int, c int, tsY_Prob *mat64.De
 	YhSet[c] = tsYhat
 	mutex.Unlock()
 }
-func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
+
+//func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[int][]int, nFold int, nFea int, nTr int, tsXdataB *mat64.Dense, sigma *mat64.Dense, trY_Cdata *mat64.Dense, nTs int, tsY_C *mat64.Dense, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) {
+//	defer wg.Done()
+//	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
+//	//bias term for tsXdata added before
+//	element := mat64.NewDense(0, 0, nil)
+//	element.Mul(tsXdataB, beta)
+//	mutex.Lock()
+//	sigma.Set(0, i, math.Sqrt(optMSE))
+//	for j := 0; j < nTs; j++ {
+//		tsY_C.Set(j, i, element.At(j, 0))
+//	}
+//	mutex.Unlock()
+//}
+
+func single_sigmaAndtsYc_Update(i int, optMSE float64, regulazor float64, tsXdataB *mat64.Dense, trY_Cdata *mat64.Dense, trXdataB *mat64.Dense, randValues []float64, sigma *mat64.Dense, tsY_C *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
-	beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm)
+	//beta is weights, convert Y to Ymat
+	nY, _ := trY_Cdata.Caps()
+	nTs, _ := tsY_C.Caps()
+	Ymat := mat64.NewDense(nY, 1, nil)
+	for j := 0; j < nY; j++ {
+		Ymat.Set(j, 0, trY_Cdata.At(j, i))
+	}
+	beta := TrainRLS_Regress_CG(trXdataB, Ymat, regulazor, randValues)
+	//return beta, regulazor, optMSE
+	//beta, _, optMSE := adaptiveTrainRLS_Regress_CG(trXdataB, trY_Cdata.ColView(i), folds, nFold, nFea, nTr, randValues, idxPerm, wg, mutex)
 	//bias term for tsXdata added before
 	element := mat64.NewDense(0, 0, nil)
 	element.Mul(tsXdataB, beta)
@@ -41,7 +65,7 @@ func single_adaptiveTrainRLS_Regress_CG(i int, trXdataB *mat64.Dense, folds map[
 	mutex.Unlock()
 }
 
-func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, folds map[int][]int, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
+func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, rankCut int, reg bool, kSet []int, lamdaSet []float64, nFold int, folds map[int][]int, randValues []float64, wg *sync.WaitGroup, mutex *sync.Mutex) (YhSet map[int]*mat64.Dense, colSum *mat64.Vector) {
 	YhSet = make(map[int]*mat64.Dense)
 	nK := len(kSet)
 	sigmaFctsSet := lamdaToSigmaFctsSet(lamdaSet)
@@ -52,8 +76,8 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
 	//for rands
-	randValues := RandListFromUniDist(nTr, nFea)
-	idxPerm := rand.Perm(nTr)
+	//randValues := RandListFromUniDist(nTr, nFea)
+	//idxPerm := rand.Perm(nTr)
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
@@ -96,9 +120,35 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//decoding with regression
 	tsY_C := mat64.NewDense(nTs, nLabel, nil)
 	sigma := mat64.NewDense(1, nLabel, nil)
-	wg.Add(nLabel)
+	//nested err/weights estimation per label
+	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
+	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	errMap := make(map[int][]float64)
 	for i := 0; i < nLabel; i++ {
-		go single_adaptiveTrainRLS_Regress_CG(i, trXdataB, folds, nFold, nFea, nTr, tsXdataB, sigma, trY_Cdata, nTs, tsY_C, randValues, idxPerm, wg, mutex)
+		err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+		errMap[i] = err
+	}
+	wg.Add(nLabel * len(lamda) * nFold)
+	for i := 0; i < nLabel; i++ {
+		//folds for regression estimates
+		trainFold, testFold := subFolds(nFold, folds, nTr, trXdataB, trY_Cdata.ColView(i))
+		//estimating error /weights
+		for j := 0; j < len(lamda); j++ {
+			for k := 0; k < nFold; k++ {
+				go single_TrainRLS_Regress_CG_errUpdate(i, j, trainFold[k].X, testFold[k].X, trainFold[k].Y, testFold[k].Y, lamda[j], nFold, randValues, &errMap, wg, mutex)
+			}
+		}
+	}
+	wg.Wait()
+	wg.Add(nLabel)
+	//update sigma and tsY_C with best err and lamda
+	for i := 0; i < nLabel; i++ {
+		err := errMap[i]
+		//min error index
+		idx := minIdx(err)
+		optMSE := err[idx]
+		regulazor := lamda[idx]
+		go single_sigmaAndtsYc_Update(i, optMSE, regulazor, tsXdataB, trY_Cdata, trXdataB, randValues, sigma, tsY_C, wg, mutex)
 	}
 	wg.Wait()
 	log.Print("step 3: cg decoding finihsed.")
@@ -229,15 +279,15 @@ func adaptiveTrainLGR_Liblin(X *mat64.Dense, Y *mat64.Vector, folds map[int][]in
 	errFinal = err[idx]
 	return wMat, regulator, errFinal, label
 }
-func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int) (beta *mat64.Dense, regulazor float64, optMSE float64) {
-	//lamda := []float64{0.000000000001, 0.000000000004, 0.00000000001, 0.00000000004, 0.0000000001, 0.0000000004, 0.000000001, 0.000000004, 0.00000001, 0.00000004, 0.0000001, 0.0000004, 0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	//err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	lamda := []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	err := []float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int][]int, nFold int, nFeature int, nTr int, randValues []float64, idxPerm []int, wg *sync.WaitGroup, mutex *sync.Mutex) (beta *mat64.Dense, regulazor float64, optMSE float64) {
 
-	//cv folds data
-	trainFold := make([]CvFold, nFold)
-	testFold := make([]CvFold, nFold)
+	//wg.Add(len(lamda) * nFold)
+	return beta, regulazor, optMSE
+}
+
+func subFolds(nFold int, folds map[int][]int, nTr int, X *mat64.Dense, Y *mat64.Vector) (trainFold []CvFold, testFold []CvFold) {
+	trainFold = make([]CvFold, nFold)
+	testFold = make([]CvFold, nFold)
 	for i := 0; i < nFold; i++ {
 		cvTrain := make([]int, 0)
 		cvTest := make([]int, 0)
@@ -256,43 +306,30 @@ func adaptiveTrainRLS_Regress_CG(X *mat64.Dense, Y *mat64.Vector, folds map[int]
 		trainFold[i].setXYinDecoding(cvTrain, X, Y)
 		testFold[i].setXYinDecoding(cvTest, X, Y)
 	}
-	//estimating error /weights
-	for j := 0; j < len(lamda); j++ {
-		for i := 0; i < nFold; i++ {
-			//weights finalized for one lamda and one fold
-			weights := TrainRLS_Regress_CG(trainFold[i].X, trainFold[i].Y, lamda[j], randValues)
-			term1 := mat64.NewDense(0, 0, nil)
-			term2 := mat64.NewDense(0, 0, nil)
-			//trXdata and tsXdata are "cbinded" previously in main
-			term1.Mul(testFold[i].X, weights)
-			term2.Sub(term1, testFold[i].Y)
-			var sum float64 = 0
-			var mean float64
-			r, c := term2.Caps()
-			for m := 0; m < r; m++ {
-				for n := 0; n < c; n++ {
-					sum += term2.At(m, n) * term2.At(m, n)
-				}
-			}
-			mean = sum / float64(r*c)
-			err[j] = err[j] + mean
-		}
-		err[j] = err[j] / float64(nFold)
+	return trainFold, testFold
+}
 
+func single_TrainRLS_Regress_CG_errUpdate(i int, j int, trFoldX *mat64.Dense, tsFoldX *mat64.Dense, trFoldY *mat64.Dense, tsFoldY *mat64.Dense, lamda float64, nFold int, randValues []float64, errMap *map[int][]float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	//weights finalized for one lamda and one fold
+	weights := TrainRLS_Regress_CG(trFoldX, trFoldY, lamda, randValues)
+	term1 := mat64.NewDense(0, 0, nil)
+	term2 := mat64.NewDense(0, 0, nil)
+	//trXdata and tsXdata are "cbinded" previously in main
+	term1.Mul(tsFoldX, weights)
+	term2.Sub(term1, tsFoldY)
+	var sum float64 = 0
+	var mean float64
+	r, c := term2.Caps()
+	for m := 0; m < r; m++ {
+		for n := 0; n < c; n++ {
+			sum += term2.At(m, n) * term2.At(m, n)
+		}
 	}
-	//min error index
-	idx := minIdx(err)
-	optMSE = err[idx]
-	regulazor = lamda[idx]
-	//beta is weights
-	//convert Y to Ymat
-	nY := Y.Len()
-	Ymat := mat64.NewDense(nY, 1, nil)
-	for i := 0; i < nY; i++ {
-		Ymat.Set(i, 0, Y.At(i, 0))
-	}
-	beta = TrainRLS_Regress_CG(X, Ymat, regulazor, randValues)
-	return beta, regulazor, optMSE
+	mean = sum / float64(r*c)
+	mutex.Lock()
+	(*errMap)[i][j] = (*errMap)[i][j] + mean/float64(nFold)
+	mutex.Unlock()
 }
 
 func MulEleByFloat64(value float64, M *mat64.Dense) (M2 *mat64.Dense) {

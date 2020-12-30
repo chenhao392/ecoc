@@ -110,10 +110,13 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		//read data
 		tsYdata, tsRowName, _, _ := src.ReadFile(tsY, true, true)
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
-		posLabelRls, negLabelRls := src.LabelRelationship(trYdata)
+		posLabelRls, negLabelRls, transLabels := src.LabelRelationship(trYdata)
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
-		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
+		//folds
+		folds := src.SOIS(trYdata, nFold, 10, 2, true)
+		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
+		//tsXdata, trXdata, indAccum, meanNet, idIdx, idxToId := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
 		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
@@ -141,19 +144,22 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		nK := 1
 		kSet := []int{nDim}
 
+		//rands
+		rand.Seed(1)
+		randValues := src.RandListFromUniDist(nTr, nFea)
+
 		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold, 10, 0, true)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
+			//cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, meanNet, idIdx, idxToId, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}
 		//MLSOTE for the folds
 		if mlsRatio > 0.0 {
-			randValues := src.RandListFromUniDist(nTr, nFea)
 			for f := 0; f < nFold; f++ {
 				trXdataTmp, trYdataTmp := src.MLSMOTE(trainFold[f].X, trainFold[f].Y, 5, mlsRatio, randValues)
 				//tsXdataTmp, tsYdataTmp := src.MLSMOTE(testFold[f].X, testFold[f].Y, 5, randValues)
@@ -165,7 +171,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		}
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")
@@ -190,7 +196,7 @@ func init() {
 	tuneCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor post-prediction calibration\n")
 	tuneCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")
 	tuneCmd.Flags().Int("nFold", 2, "number of folds for cross validation\n")
-	tuneCmd.Flags().Bool("r", false, "experimental regularized CCA\n(default false)")
+	tuneCmd.Flags().Bool("r", true, "regularized CCA\n(default true)")
 	tuneCmd.Flags().String("res", "result", "result folder")
 	tuneCmd.Flags().Int("t", 4, "number of threads")
 	tuneCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")

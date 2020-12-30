@@ -108,11 +108,12 @@ var predCmd = &cobra.Command{
 		//read data
 		tsYdata, tsRowName, _, _ := src.ReadFile(tsY, true, true)
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
-		posLabelRls, negLabelRls := src.LabelRelationship(trYdata)
+		posLabelRls, negLabelRls, transLabels := src.LabelRelationship(trYdata)
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
 		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
-		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
-		_, nFea := trXdata.Caps()
+		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
+		//tsXdata, trXdata, indAccum, meanNet, idIdx, idxToId := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
+		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
 			log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
@@ -130,6 +131,10 @@ var predCmd = &cobra.Command{
 		nK := 1
 		kSet := []int{nDim}
 
+		//rands
+		rand.Seed(1)
+		randValues := src.RandListFromUniDist(nTr, nFea)
+
 		//split training data for nested cv
 		folds := src.SOIS(trYdata, nFold, 10, 10, true)
 		trainFold := make([]src.CvFold, nFold)
@@ -137,14 +142,15 @@ var predCmd = &cobra.Command{
 
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, isAddPrior, isDada, alpha, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
+			//cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, meanNet, idIdx, idxToId, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
 		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")

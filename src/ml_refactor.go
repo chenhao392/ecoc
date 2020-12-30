@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-func ReadNetworkPropagate(trRowName []string, tsRowName []string, trYdata *mat64.Dense, inNetworkFile []string, priorMatrixFile []string, isAddPrior bool, isDada bool, alpha float64, wg *sync.WaitGroup, mutex *sync.Mutex) (tsXdata *mat64.Dense, trXdata *mat64.Dense, indAccum []int) {
+func ReadNetworkPropagate(trRowName []string, tsRowName []string, trYdata *mat64.Dense, inNetworkFile []string, priorMatrixFile []string, transLabels *mat64.Dense, isAddPrior bool, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (tsXdata *mat64.Dense, trXdata *mat64.Dense, indAccum []int) {
 	tsXdata = mat64.NewDense(0, 0, nil)
 	trXdata = mat64.NewDense(0, 0, nil)
 	// for filtering prior genes, only those in training set are used for propagation
@@ -20,18 +20,41 @@ func ReadNetworkPropagate(trRowName []string, tsRowName []string, trYdata *mat64
 	idIdx := make(map[string]int)
 	idxToId := make(map[int]string)
 	indAccum = make([]int, 0)
+	//loading network gene ids
+	//idIdx, idxToId, _ = IdIdxGen(inNetworkFile[0])
+	//for i := 1; i < len(inNetworkFile); i++ {
+	//	//idIdx as gene -> idx in net
+	//	idIdxTmp, idxToIdTmp, _ := IdIdxGen(inNetworkFile[i])
+	//	idIdx, idxToId = AccumIds(idIdxTmp, idxToIdTmp, idIdx, idxToId)
+	//}
+	//mean network for missing value
+	//nGene := len(idIdx)
+	//totalNet := mat64.NewDense(nGene, nGene, nil)
+	//countNet := mat64.NewDense(nGene, nGene, nil)
+	//for i := 0; i < len(inNetworkFile); i++ {
+	//	log.Print("loading network file: ", inNetworkFile[i])
+	//	totalNet, countNet = FillNetwork(inNetworkFile[i], idIdx, idxToId, totalNet, countNet)
+	//}
+	//meanNet = MeanNet(totalNet, countNet)
+	//propagating networks
+	log.Print("propagating networks.")
 	for i := 0; i < len(inNetworkFile); i++ {
-		//idIdx as gene -> idx in net
-		log.Print("loading network file: ", inNetworkFile[i])
+		//network := mat64.DenseCopyOf(meanNet)
+		//network = UpdateNetwork(inNetworkFile[i], idIdx, idxToId, network)
+		//network = ReadNetwork(inNetworkFile[i], idIdx, idxToId, network)
 		network, idIdx, idxToId = ReadNetwork(inNetworkFile[i])
 		if !isAddPrior {
-			sPriorData, ind := PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, wg, mutex)
+			//sPriorData, ind := PropagateSetDLP(network, trYdata, idIdx, trRowName, trGeneMap, alpha, threads, wg)
+			sPriorData, ind := PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
+			//sPriorData, ind := PropagateSet2D(network, trYdata, idIdx, trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
+			//FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 			tsXdata, trXdata = FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 			indAccum = append(indAccum, ind...)
 		} else {
 			for j := 0; j < len(priorMatrixFile); j++ {
 				priorData, priorGeneID, priorIdxToId := ReadNetwork(priorMatrixFile[j])
 				sPriorData, ind := PropagateSetWithPrior(priorData, priorGeneID, priorIdxToId, network, trYdata, idIdx, idxToId, trRowName, trGeneMap, isDada, alpha, wg, mutex)
+				//FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 				tsXdata, trXdata = FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
 				indAccum = append(indAccum, ind...)
 			}
@@ -39,7 +62,7 @@ func ReadNetworkPropagate(trRowName []string, tsRowName []string, trYdata *mat64
 	}
 	return tsXdata, trXdata, indAccum
 }
-func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, inNetworkFile []string, priorMatrixFile []string, isAddPrior bool, isDada bool, alpha float64, wg *sync.WaitGroup, mutex *sync.Mutex) (cvTrain []int, cvTest []int, trXdataCV *mat64.Dense, indAccum []int) {
+func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, inNetworkFile []string, priorMatrixFile []string, transLabels *mat64.Dense, isAddPrior bool, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (cvTrain []int, cvTest []int, trXdataCV *mat64.Dense, indAccum []int) {
 	cvTrain = make([]int, 0)
 	cvTest = make([]int, 0)
 	cvTestMap := map[int]int{}
@@ -74,8 +97,13 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 	for i := 0; i < len(inNetworkFile); i++ {
 		//idIdx as gene -> idx in net
 		network, idIdx, idxToId := ReadNetwork(inNetworkFile[i])
+		//network := mat64.DenseCopyOf(meanNet)
+		//network = UpdateNetwork(inNetworkFile[i], idIdx, idxToId, network)
+
 		if !isAddPrior {
-			sPriorData, ind := PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, isDada, alpha, wg, mutex)
+			//sPriorData, ind := PropagateSetDLP(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, alpha, threads, wg)
+			sPriorData, ind := PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
+			//sPriorData, ind := PropagateSet2D(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
 			indAccum = append(indAccum, ind...)
 			_, nTrLabel := trYdataCV.Caps()
 			_, nLabel := sPriorData.Caps()
@@ -87,12 +115,14 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 					for k := 0; k < len(trRowName); k++ {
 						_, exist := idIdx[trRowName[k]]
 						if exist {
-							tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
+							//tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel)/float64(ind[l]))
+							tmpTrXdata.Set(k, cLabel, sPriorData.At(idIdx[trRowName[k]], cLabel))
 							//adding trY label as max value to trX
 							if trYdata.At(k, l) == 1.0 {
 								_, exist2 := cvTestMap[k]
 								if !exist2 {
-									tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
+									//tmpTrXdata.Set(k, cLabel, 1.0/float64(ind[l]))
+									tmpTrXdata.Set(k, cLabel, 1.0)
 								}
 							}
 						}
@@ -147,45 +177,70 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 
 func single_AccumTsYdata(fBetaThres float64, isAutoBeta bool, globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYhat *mat64.Dense, iFold int, c int, colSum *mat64.Vector, tsX *mat64.Dense, indAccum []int, YhRawSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
-	tsYhat, _ := QuantileNorm(rawTsYhat, mat64.NewDense(0, 0, nil), false)
-	_, nCol := tsYhat.Caps()
-	minMSElamda := make([]float64, nCol)
-	minMSE := make([]float64, nCol)
+	tsYhat := mat64.DenseCopyOf(rawTsYhat)
+	nColGlobal := colSum.Len()
+	_, nColFold := tsYfold.Caps()
+	minMSElamda := make([]float64, nColFold)
+	minMSE := make([]float64, nColFold)
 	_, isDefinedMSE := plattRobustMeasure[c]
 	mutex.Lock()
 	if !isDefinedMSE {
-		plattRobustMeasure[c] = mat64.NewDense(len(plattRobustLamda), nCol, nil)
+		plattRobustMeasure[c] = mat64.NewDense(len(plattRobustLamda), nColGlobal, nil)
 	}
 	for p := 0; p < len(plattRobustLamda); p++ {
 		tmpLamda := make([]float64, 0)
-		for q := 0; q < nCol; q++ {
+		//lamda per fold label
+		for q := 0; q < nColFold; q++ {
 			tmpLamda = append(tmpLamda, plattRobustLamda[p])
 		}
+		//mse per fold label
 		_, _, mseArr := Platt(tsYhat, tsYfold, tsYhat, tmpLamda)
-		for q := 0; q < nCol; q++ {
-			plattRobustMeasure[c].Set(p, q, plattRobustMeasure[c].At(p, q)+mseArr[q])
-			if p == 0 {
-				minMSE[q] = mseArr[q]
-				minMSElamda[q] = plattRobustLamda[p]
-			} else {
-				if mseArr[q] < minMSE[q] {
-					minMSE[q] = mseArr[q]
-					minMSElamda[q] = plattRobustLamda[p]
+		//record mse and choose minMSElamda by minMSE
+		qF := -1
+		qG := 0
+		for qG < nColGlobal {
+			//qF inc if qG label exist in fold
+			if colSum.At(qG, 0) == 1.0 {
+				qF++
+			}
+			//in case first label missing, start updating when qF is updated
+			if qF >= 0 {
+				plattRobustMeasure[c].Set(p, qG, plattRobustMeasure[c].At(p, qG)+mseArr[qF])
+				if p == 0 {
+					minMSE[qF] = mseArr[qF]
+					minMSElamda[qF] = plattRobustLamda[p]
+				} else {
+					if mseArr[qF] < minMSE[qF] {
+						minMSE[qF] = mseArr[qF]
+						minMSElamda[qF] = plattRobustLamda[p]
+					}
 				}
 			}
+			qG++
 		}
 	}
 	mutex.Unlock()
 
 	tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
 	//raw thres added
+	tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
 	rawBeta := FscoreBeta(tsYfold, tsYhat, fBetaThres, isAutoBeta)
 	rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
 	tsYhat, _ = SoftThresScale(tsYhat, rawThres)
 	mutex.Lock()
 	//beta for thres
-	for p := 0; p < nCol; p++ {
-		globalBeta.Set(c, p, globalBeta.At(c, p)+rawBeta.At(0, p))
+	qF := -1
+	qG := 0
+	for qG < nColGlobal {
+		//qF inc if qG label exist in fold
+		if colSum.At(qG, 0) == 1.0 {
+			qF++
+		}
+		//in case first label missing, start updating when qF is updated
+		if qF >= 0 {
+			globalBeta.Set(c, qG, globalBeta.At(c, qG)+rawBeta.At(0, qG))
+		}
+		qG++
 	}
 	//accum to add information for KNN calibaration
 	AccumTsYdata(iFold, c, colSum, tsYhat, rawTsYhat, tsYfold, tsX, indAccum, YhRawSet, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, rawThres)
@@ -194,32 +249,9 @@ func single_AccumTsYdata(fBetaThres float64, isAutoBeta bool, globalBeta *mat64.
 
 func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int, nKnn int, isKnn bool, fBetaThres float64, isAutoBeta bool, trainMeasure *mat64.Dense, globalBeta *mat64.Dense, i int, yPlattSet map[int]*mat64.Dense, YhPlattSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, iFoldMarker map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
+	//potential minus one in these mats, to be fixed as in single_AccumTsYdata
 	yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold := SubSetTrain(i, yPlattSet[c], YhPlattSet[c], yPredSet[c], xSet[c], iFoldMarker[c])
-	//calculate platt scaled tsYhat again for measures
-	//tmp comment out as yPlattSet record scalded data for now
-	//_, nCol := tsYhat.Caps()
-	//minMSElamda := make([]float64, nCol)
-	//minMSE := make([]float64, nCol)
-	//for p := 0; p < len(plattRobustLamda); p++ {
-	//	for q := 0; q < nCol; q++ {
-	//		if p == 0 {
-	//			minMSE[q] = plattRobustMeasure[c].At(p, q)
-	//			minMSElamda[q] = plattRobustLamda[p]
-	//		} else {
-	//			if plattRobustMeasure[c].At(p, q) < minMSE[q] {
-	//				minMSE[q] = plattRobustMeasure[c].At(p, q)
-	//				minMSElamda[q] = plattRobustLamda[p]
-	//			}
-	//		}
-	//	}
-	//}
-	//tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
-	//tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
-	//beta := FscoreBeta(tsYfold, tsYhat)
-	//rawThres := FscoreThres(tsYfold, tsYhat, beta)
-	//tsYhat, rawThres = SoftThresScale(tsYhat, rawThres)
-
-	//tmp thres for Report, as data reacaled
+	//tmp thres for Report, as data has been recaled
 	rawThres := mat64.NewDense(1, nLabel, nil)
 	for p := 0; p < nLabel; p++ {
 		rawThres.Set(0, p, 0.5)
@@ -235,14 +267,15 @@ func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int,
 	trainMeasure.Set(c, 9, trainMeasure.At(c, 9)+macroAupr)
 	trainMeasure.Set(c, 11, trainMeasure.At(c, 11)+optScore)
 	for p := 0; p < nLabel; p++ {
-		idx := 11 + (p+1)*2
+		idx := 13 + p*2
 		trainMeasure.Set(c, idx, trainMeasure.At(c, idx)+macroAuprSet[p])
 	}
 	mutex.Unlock()
 	//probability to be recalibrated for label dependency, subset train by fold
 	if isKnn {
+		kNNidx := TopKnnLabelIdx(macroAuprSet, 0.5)
 		//tsYhat = MultiLabelRecalibrate(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls, wg, mutex)
-		tsYhat = MultiLabelRecalibrate_SingleThread(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls)
+		tsYhat = MultiLabelRecalibrate_SingleThread(nKnn, tsYhat, xTest, yPlattTrain, yPredTrain, xTrain, posLabelRls, negLabelRls, kNNidx)
 		//update MultiLabelRecalibrate tsYhat to YhPlattSetCalibrated
 		YhPlattSetUpdate(i, c, YhPlattSetCalibrated, tsYhat, iFoldMarker[c])
 		rawBeta := FscoreBeta(tsYfold, tsYhat, fBetaThres, isAutoBeta)
@@ -259,27 +292,21 @@ func single_RecordMeasures(rankCut int, k int, lamda float64, c int, nLabel int,
 		trainMeasure.Set(c, 10, trainMeasure.At(c, 10)+macroAupr)
 		trainMeasure.Set(c, 12, trainMeasure.At(c, 12)+optScore)
 		for p := 0; p < nLabel; p++ {
-			idx := 12 + (p+1)*2
+			idx := 14 + p*2
 			trainMeasure.Set(c, idx, trainMeasure.At(c, idx)+macroAuprSet[p])
 		}
 		mutex.Unlock()
 	}
 }
 
-func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, YhRawSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, globalBeta *mat64.Dense, nFold int, nLabel int, isPerLabel bool, isKnn bool) (thres *mat64.Dense, plattAB *mat64.Dense, YhPlattScale *mat64.Dense, thresKnn *mat64.Dense) {
-	thres = mat64.NewDense(1, nLabel, nil)
+func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, YhRawSet map[int]*mat64.Dense, YhPlattSetCalibrated map[int]*mat64.Dense, yPlattSet map[int]*mat64.Dense, globalBeta *mat64.Dense, nFold int, nLabel int, isPerLabel bool, isKnn bool) (thres map[int]*mat64.Dense, plattAB map[int]*mat64.Dense, YhPlattScale *mat64.Dense, thresKnn *mat64.Dense) {
+	nRow, _ := YhRawSet[0].Caps()
+	thres = make(map[int]*mat64.Dense)
+	plattAB = make(map[int]*mat64.Dense)
+	YhPlattScale = mat64.NewDense(nRow, nLabel, nil)
 	thresKnn = mat64.NewDense(1, nLabel, nil)
-	plattAB = mat64.NewDense(2, nLabel, nil)
 	betaValue := mat64.NewDense(1, nLabel, nil)
 	betaValueKnn := mat64.NewDense(1, nLabel, nil)
-	nRow, _ := YhRawSet[0].Caps()
-	YhPlattScale = mat64.NewDense(nRow, nLabel, nil)
-	//log
-	if isPerLabel {
-		log.Print("choose auprs for labels as object functions in tuning.")
-	} else {
-		log.Print("choose micro-aupr for all labels as object function in tuning.")
-	}
 	//thres and plattAB sets
 	for i := 0; i < len(cBestArr); i++ {
 		cBest := cBestArr[i]
@@ -305,53 +332,48 @@ func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*ma
 			}
 		}
 		//platt scale for testing
-		YhPlattScaleTmp, _ = QuantileNorm(YhRawSet[cBest], mat64.NewDense(0, 0, nil), false)
-		YhPlattScaleTmp, plattABtmp, _ = Platt(YhPlattScaleTmp, yPlattSet[cBest], YhPlattScaleTmp, minMSElamda)
-		//betaValue
+		YhPlattScaleTmp, plattABtmp, _ = Platt(YhRawSet[cBest], yPlattSet[cBest], YhRawSet[cBest], minMSElamda)
+		YhPlattScaleTmp, _ = QuantileNorm(YhPlattScaleTmp, mat64.NewDense(0, 0, nil), false)
+		//betaValue and thres
 		betaValueTmp := mat64.NewDense(1, nLabel, nil)
 		betaValueKnnTmp := mat64.NewDense(1, nLabel, nil)
-		//thresTmp for each cBest
 		for p := 0; p < nLabel; p++ {
 			betaValueTmp.Set(0, p, globalBeta.At(cBest, p)/float64(nFold))
 		}
 		thresTmp = FscoreThres(yPlattSet[cBest], YhPlattScaleTmp, betaValueTmp)
+		//LogColSum(thresTmp)
 		if isKnn {
-			log.Print("choose to use Knn.")
 			for p := nLabel; p < nLabel*2; p++ {
 				betaValueKnnTmp.Set(0, p-nLabel, globalBeta.At(cBest, p)/float64(nFold))
 			}
 			thresKnnTmp = FscoreThres(yPlattSet[cBest], YhPlattSetCalibrated[cBest], betaValueKnnTmp)
-		} else {
-			log.Print("choose to use raw score.")
 		}
 		//Soft scale for final training set prediction
 		YhPlattScaleTmp, _ = SoftThresScale(YhPlattScaleTmp, thresTmp)
-		//if not per label, first cBest is the only cBest
+		thres[i] = thresTmp
+		plattAB[i] = plattABtmp
 		if !isPerLabel {
-			thres = thresTmp
 			betaValue = betaValueTmp
 			if isKnn {
 				thresKnn = thresKnnTmp
 				betaValueKnn = betaValueKnnTmp
 			}
-			plattAB = plattABtmp
 			YhPlattScale = YhPlattScaleTmp
+			//if not per label, first cBest is the only cBest
 			break
-			//else set thres and plattAB for each label
 		} else {
-			thres.Set(0, i, thresTmp.At(0, i))
+			//else set thres and plattAB for each label
 			betaValue.Set(0, i, betaValueTmp.At(0, i))
 			if isKnn {
 				thresKnn.Set(0, i, thresKnnTmp.At(0, i))
 				betaValueKnn.Set(0, i, betaValueKnnTmp.At(0, i))
 			}
-			plattAB.Set(0, i, plattABtmp.At(0, i))
-			plattAB.Set(1, i, plattABtmp.At(1, i))
-			for q := 0; q < nLabel; q++ {
+			for q := 0; q < nRow; q++ {
 				YhPlattScale.Set(q, i, YhPlattScaleTmp.At(q, i))
 			}
 		}
 	}
+
 	//log beta
 	log.Print("choose these beta values per label for F-thresholding.")
 	str := ""
@@ -369,18 +391,30 @@ func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*ma
 		}
 		log.Print(str)
 	}
+	log.Print("choose these thres values per label for F-thresholding.")
+	str = ""
+	for p := 0; p < nLabel; p++ {
+		if isPerLabel {
+			s := fmt.Sprintf("%.3f", thres[p].At(0, p))
+			str = str + "\t" + s
+		} else {
+			s := fmt.Sprintf("%.3f", thres[0].At(0, p))
+			str = str + "\t" + s
+		}
+	}
+	log.Print(str)
 	return thres, plattAB, YhPlattScale, thresKnn
 }
 
-func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, isAutoBeta bool, nK int, nKnn int, isPerLabel bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
+func TuneAndPredict(nFold int, folds map[int][]int, randValues []float64, fBetaThres float64, isAutoBeta bool, nK int, nKnn int, isPerLabel bool, isKnn bool, kSet []int, lamdaSet []float64, reg bool, rankCut int, trainFold []CvFold, testFold []CvFold, indAccum []int, tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, trYdata *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (trainMeasureUpdated *mat64.Dense, testMeasureUpdated *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
 	//traing data per hyperparameter
 	YhRawSet := make(map[int]*mat64.Dense)
 	YhPlattSet := make(map[int]*mat64.Dense)
 	YhPlattSetCalibrated := make(map[int]*mat64.Dense)
-	yPlattSet := make(map[int]*mat64.Dense)
-	yPredSet := make(map[int]*mat64.Dense)
+	yPlattSet := make(map[int]*mat64.Dense) //tsY
+	yPredSet := make(map[int]*mat64.Dense)  //binTsY
 	iFoldMarker := make(map[int]*mat64.Dense)
-	xSet := make(map[int]*mat64.Dense)
+	xSet := make(map[int]*mat64.Dense) //tsX
 	plattRobustMeasure := make(map[int]*mat64.Dense)
 	plattRobustLamda := []float64{0.0, 0.04, 0.08, 0.12, 0.16, 0.2}
 	_, nLabel := trYdata.Caps()
@@ -393,26 +427,26 @@ func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, isAutoBe
 		log.Print("set kNN calibration to false as nKnn is not positive.")
 	}
 	//nested folds for training data
-	wg.Add(nFold)
 	for f := 0; f < nFold; f++ {
-		go single_SOIS(subFolds, f, trainFold[f].Y, nFold, 10, 0, false, wg, mutex)
+		tmpFold := SOIS(trainFold[f].Y, nFold, 10, 0, false)
+		subFolds[f] = tmpFold
 	}
-	wg.Wait()
 	log.Print("nested SOIS folds generated.")
 	//measure matrix
 	nL := nK * len(lamdaSet)
-	trainMeasure := mat64.NewDense(nL, 14+nLabel*2, nil)
+	trainMeasure := mat64.NewDense(nL, 13+nLabel*2, nil)
 	testMeasure := mat64.NewDense(1, 8+nLabel, nil)
 
 	for i := 0; i < nFold; i++ {
 		idxToPrint := i + 1
 		log.Print("starting fold ", idxToPrint, " of ", nFold, " folds.")
-		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, lamdaSet, nFold, subFolds[i], wg, mutex)
+		YhSet, colSum := EcocRun(testFold[i].X, testFold[i].Y, trainFold[i].X, trainFold[i].Y, rankCut, reg, kSet, lamdaSet, nFold, subFolds[i], randValues, wg, mutex)
 		tsYFold := PosSelect(testFold[i].Y, colSum)
 
 		c := 0
 		wg.Add(nK * len(lamdaSet))
 		//accum calculated training data
+		//plattRobustMeasure,beta,tsYh and etc calculated and recorded
 		for m := 0; m < nK; m++ {
 			for n := 0; n < len(lamdaSet); n++ {
 				go single_AccumTsYdata(fBetaThres, isAutoBeta, globalBeta, tsYFold, YhSet[c], i, c, colSum, testFold[i].X, testFold[i].IndAccum, YhRawSet, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, plattRobustMeasure, plattRobustLamda, wg, mutex)
@@ -444,31 +478,39 @@ func TuneAndPredict(nFold int, folds map[int][]int, fBetaThres float64, isAutoBe
 		objectBaseNum = 12
 	}
 	cBest, _, _, _ := BestHyperParameterSetByMeasure(trainMeasure, objectBaseNum, nLabel, isPerLabel)
-	thres, plattAB, YhPlattScale, thresKnn := ancillaryByHyperParameterSet(cBest, plattRobustMeasure, plattRobustLamda, YhRawSet, YhPlattSetCalibrated, yPlattSet, globalBeta, nFold, nLabel, isPerLabel, isKnn)
+	thresSet, plattABset, YhPlattScale, thresKnn := ancillaryByHyperParameterSet(cBest, plattRobustMeasure, plattRobustLamda, YhRawSet, YhPlattSetCalibrated, yPlattSet, globalBeta, nFold, nLabel, isPerLabel, isKnn)
 	//only the best hyperparameter set to use if not "isPerLabel"
-	//thus the reset
+	//thus the reset for saving computational power
 	if !isPerLabel {
 		kSet = []int{int(trainMeasure.At(cBest[0], 0))}
 		lamdaSet = []float64{trainMeasure.At(cBest[0], 1)}
 	}
 	//best training parameters for testing
-	YhSet, _ := EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, lamdaSet, nFold, folds, wg, mutex)
-	//quantile normalization
-	if isPerLabel {
-		tsYhat = PerlLabelQuantileNorm(YhSet, cBest)
-	} else {
-		tsYhat, _ = QuantileNorm(YhSet[0], mat64.NewDense(0, 0, nil), false)
-	}
+	YhSet, _ := EcocRun(tsXdata, tsYdata, trXdata, trYdata, rankCut, reg, kSet, lamdaSet, nFold, folds, randValues, wg, mutex)
 	//scales
-	tsYhat = PlattScaleSet(tsYhat, plattAB)
-	tsYhat, thres = SoftThresScale(tsYhat, thres)
+	//thres := mat64.NewDense(0, 0, nil)
+	if isPerLabel {
+		//platt and quantile
+		tsYhat = PerlLabelScaleSet(YhSet, plattABset, cBest)
+		tsYhat, thres = PerLabelSoftThresScale(tsYhat, thresSet)
+	} else {
+		tsYhat = PlattScaleSet(YhSet[0], plattABset[0])
+		tsYhat, _ = QuantileNorm(YhSet[0], mat64.NewDense(0, 0, nil), false)
+		tsYhat, thres = SoftThresScale(tsYhat, thresSet[0])
+	}
 	//knn calibration
 	if isKnn {
 		tsXdata = RefillIndCol(tsXdata, indAccum)
 		if isPerLabel {
-			tsYhat = PerlLabelMultiLabelRecalibrate(cBest, nKnn, tsYhat, tsXdata, yPlattSet, yPredSet, xSet, posLabelRls, negLabelRls, wg, mutex)
+			tsYhat = PerlLabelMultiLabelRecalibrate(YhSet, cBest, nKnn, trainMeasure, tsXdata, yPlattSet, yPredSet, xSet, plattABset, thresSet, posLabelRls, negLabelRls, wg, mutex)
 		} else {
-			tsYhat = MultiLabelRecalibrate(nKnn, tsYhat, tsXdata, yPlattSet[cBest[0]], yPredSet[cBest[0]], xSet[cBest[0]], posLabelRls, negLabelRls, wg, mutex)
+			thresData := mat64.NewDense(1, nLabel, nil)
+			for i := 0; i < nLabel; i++ {
+				thresData.Set(0, i, 0.5)
+			}
+			_, _, _, _, _, _, macroAuprSet := Report(yPlattSet[cBest[0]], YhPlattSet[cBest[0]], thresData, rankCut, false)
+			kNNidx := TopKnnLabelIdx(macroAuprSet, 0.5)
+			tsYhat = MultiLabelRecalibrate(nKnn, tsYhat, tsXdata, yPlattSet[cBest[0]], yPredSet[cBest[0]], xSet[cBest[0]], posLabelRls, negLabelRls, kNNidx, wg, mutex)
 		}
 		tsYhat, thres = SoftThresScale(tsYhat, thresKnn)
 	}

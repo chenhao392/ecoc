@@ -12,8 +12,96 @@ import (
 	"strings"
 )
 
+func AccumIds(idIdx map[string]int, idxToId map[int]string, UpdatedIdIdx map[string]int, UpdatedIdxToId map[int]string) (map[string]int, map[int]string) {
+	nEle := len(UpdatedIdIdx)
+	for name, _ := range idIdx {
+		_, exist := UpdatedIdIdx[name]
+		if !exist {
+			//nEle is zero based in matrix
+			UpdatedIdIdx[name] = nEle
+			UpdatedIdxToId[nEle] = name
+			nEle += 1
+		}
+	}
+	return UpdatedIdIdx, UpdatedIdxToId
+
+}
+
+func MeanNet(totalNet *mat64.Dense, countNet *mat64.Dense) *mat64.Dense {
+	nRow, nCol := totalNet.Caps()
+	meanNet := mat64.NewDense(nRow, nCol, nil)
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nCol; j++ {
+			if countNet.At(i, j) > 0.0 {
+				meanNet.Set(i, j, totalNet.At(i, j)/countNet.At(i, j))
+			}
+		}
+	}
+	return meanNet
+}
+
+func UpdateNetwork(inNetworkFile string, idIdx map[string]int, idxToId map[int]string, network *mat64.Dense) *mat64.Dense {
+	//file
+	file, err := os.Open(inNetworkFile)
+	if err != nil {
+		return nil
+	}
+	//load
+	br := bufio.NewReaderSize(file, 32768000)
+	for {
+		line, isPrefix, err := br.ReadLine()
+		if err != nil {
+			break
+		}
+		if isPrefix {
+			return nil
+		}
+
+		str := string(line)
+		elements := strings.Split(str, "\t")
+		a := idIdx[elements[0]]
+		b := idIdx[elements[1]]
+		v, _ := strconv.ParseFloat(elements[2], 64)
+		network.Set(a, b, v)
+		network.Set(b, a, v)
+
+	}
+	return network
+}
+
+func FillNetwork(inNetworkFile string, idIdx map[string]int, idxToId map[int]string, totalNet *mat64.Dense, countNet *mat64.Dense) (*mat64.Dense, *mat64.Dense) {
+	//file
+	file, err := os.Open(inNetworkFile)
+	if err != nil {
+		return nil, nil
+	}
+	//load
+	br := bufio.NewReaderSize(file, 32768000)
+	for {
+		line, isPrefix, err := br.ReadLine()
+		if err != nil {
+			break
+		}
+		if isPrefix {
+			return nil, nil
+		}
+
+		str := string(line)
+		elements := strings.Split(str, "\t")
+		a := idIdx[elements[0]]
+		b := idIdx[elements[1]]
+		v, _ := strconv.ParseFloat(elements[2], 64)
+		totalNet.Set(a, b, totalNet.At(a, b)+v)
+		totalNet.Set(b, a, totalNet.At(a, b)+v)
+
+		countNet.Set(a, b, countNet.At(a, b)+1.0)
+		countNet.Set(b, a, countNet.At(a, b)+1.0)
+	}
+	return totalNet, countNet
+}
+
 func ReadNetwork(inNetworkFile string) (network *mat64.Dense, idIdx map[string]int, idxToId map[int]string) {
-	idIdx, idxToId, nID := idIdxGen(inNetworkFile)
+	idIdx, idxToId, nID := IdIdxGen(inNetworkFile)
 	network = mat64.NewDense(nID, nID, nil)
 	//file
 	file, err := os.Open(inNetworkFile)
@@ -41,7 +129,7 @@ func ReadNetwork(inNetworkFile string) (network *mat64.Dense, idIdx map[string]i
 	}
 	return network, idIdx, idxToId
 }
-func idIdxGen(inNetworkFile string) (idIdx map[string]int, idxToId map[int]string, count int) {
+func IdIdxGen(inNetworkFile string) (idIdx map[string]int, idxToId map[int]string, count int) {
 	idIdx = make(map[string]int)
 	idxToId = make(map[int]string)
 	//file

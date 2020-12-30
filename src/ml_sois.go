@@ -3,7 +3,7 @@ package src
 import (
 	"github.com/gonum/matrix/mat64"
 	"log"
-	"math/rand"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +23,12 @@ type combine struct {
 	Combine []int
 }
 
+const float64EqualThres = 1e-9
+
+func AlmostEqual(a, b float64) bool {
+	return math.Abs(a-b) <= float64EqualThres
+}
+
 func single_SOIS(subFolds map[int]map[int][]int, idxFold int, trYdata *mat64.Dense, nFold int, ratio int, minPosPerFold int, isOutInfo bool, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	tmpFold := SOIS(trYdata, nFold, ratio, minPosPerFold, isOutInfo)
@@ -39,19 +45,13 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, minPosPerFold int, isOutInfo b
 	sampleWithCombineMap := make(map[string]combineList)
 	allNegRow := make([]int, 0)
 	lRatio, colSum, _ := labelRatio(trY) //label scores for ranking most minority label (pairs) first
-	folds, rowUsed = overSampleMinorLabel(trY, minPosPerFold, nFold, colSum)
-	//pseudo rand Ints for avoiding a timesteamp rand related anomaly in some runs
-	//instances were non-randomly distributed way away from random
-	rand.Seed(1)
-	randInts := make([]int, 0)
-	for i := 0; i < nRow; i++ {
-		n := rand.Int()
-		randInts = append(randInts, n)
-	}
+	//counter intuiative to read, but we are sampling test sets in SOIS.
+	//so that more dups would be in training set.
+	folds, rowUsed = underSampleMinorLabel(trY, minPosPerFold, nFold, colSum)
 	//init stats
 	for rowIdx := 0; rowIdx < nRow; rowIdx++ {
 		key, sum, combines := genCombines(trY.RawRowView(rowIdx), lRatio)
-		if sum == 0.0 {
+		if AlmostEqual(sum, 0.0) {
 			allNegRow = append(allNegRow, rowIdx)
 			continue
 		}
@@ -92,26 +92,24 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, minPosPerFold int, isOutInfo b
 	perLabelPerFold := make(map[int]map[string]float64)
 	perFold := make(map[int]float64)
 	for i := 0; i < nFold; i++ {
+		tmp := make(map[string]float64)
 		for com, count := range allCombine {
-			tmp := make(map[string]float64)
 			tmp[com] = count / float64(nFold)
-			perCombinePerFold[i] = tmp
 		}
+		perCombinePerFold[i] = tmp
 		perFold[i] = float64(nRow) / float64(nFold)
+		tmp = make(map[string]float64)
 		for j := 0; j < len(lRatio); j++ {
-			tmp := make(map[string]float64)
 			ele := strconv.Itoa(j)
 			tmp[ele] = 0.0
-			perLabelPerFold[i] = tmp
 		}
+		perLabelPerFold[i] = tmp
 	}
-
 	//update stats to match the over sampled rows
-	sampleWithCombineMap, perCombinePerFold, perLabelPerFold, perFold = updateStatAfterOverSampling(nFold, rowUsed, sampleWithCombineMap, perRowCombine, perCombinePerFold, perLabelPerFold, perFold)
+	sampleWithCombineMap, perCombinePerFold, perLabelPerFold, perFold = updateStatAfterUnderSampling(nFold, rowUsed, sampleWithCombineMap, perRowCombine, perCombinePerFold, perLabelPerFold, perFold)
 	//subseting to folds
 	key := mostDemandCombine(sampleWithCombineMap)
 	for key != "" {
-		//log.Print("Choose key: ", key, " with Sum ", sampleWithCombineMap[key].Sum, " and Count ", sampleWithCombineMap[key].Count)
 		for j := 0; j < len(sampleWithCombineMap[key].Combines); j++ {
 			//ele is one combine in the loop for key
 			ele := strconv.Itoa(sampleWithCombineMap[key].Combines[j][0])
@@ -125,18 +123,24 @@ func SOIS(trY *mat64.Dense, nFold int, ratio int, minPosPerFold int, isOutInfo b
 					continue
 				}
 				//append rowIdx to folds and mark as used
-				iFold := mostDemandFold(perCombinePerFold, perLabelPerFold, lRatio, perFold, ele, rowIdx, randInts[rowIdx], nFold)
+				iFold := mostDemandFold(perCombinePerFold, perLabelPerFold, lRatio, perFold, ele, rowIdx, nFold)
 				folds[iFold] = append(folds[iFold], rowIdx)
 				//}
 				rowUsed[rowIdx] = true
 				//remove this rowIdx in all sampleWithCombineMap
 				//sampleWithCombineMap count -1 as well
-				for k, cl := range sampleWithCombineMap {
+				tmpKarr := make([]string, 0)
+				for k, _ := range sampleWithCombineMap {
+					tmpKarr = append(tmpKarr, k)
+				}
+				sort.Strings(tmpKarr)
+				for k := 0; k < len(tmpKarr); k++ {
+					cl := sampleWithCombineMap[tmpKarr[k]]
 					for l := 0; l < len(cl.Rows); l++ {
 						if cl.Rows[l] == rowIdx {
 							cl.Rows = remove(cl.Rows, l)
 							cl.Count -= 1
-							sampleWithCombineMap[k] = cl
+							sampleWithCombineMap[tmpKarr[k]] = cl
 							break
 						}
 					}
@@ -223,12 +227,12 @@ func remove(slice []int, i int) []int {
 //rowIdx            rowIndex
 //nFold             number of folds to distribute instances
 //iFold             choosen fold index
-func mostDemandFold(perCombinePerFold map[int]map[string]float64, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, perFold map[int]float64, combine string, rowIdx int, randInt int, nFold int) (iFold int) {
+func mostDemandFold(perCombinePerFold map[int]map[string]float64, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, perFold map[int]float64, combine string, rowIdx int, nFold int) (iFold int) {
 	//is the label pair should be filled to minority labels?
-	minorLabelFold, isMinorLabel := mostUnderRepFold(combine, perLabelPerFold, labelRatio, nFold, 0.8)
-	if isMinorLabel {
-		return minorLabelFold
-	}
+	//minorLabelFold, isMinorLabel := mostUnderRepFold(combine, perLabelPerFold, labelRatio, nFold, 0.8, 10.0)
+	//if isMinorLabel {
+	//	return minorLabelFold
+	//}
 	var sortMap []kv
 	for i := 0; i < nFold; i++ {
 		sortMap = append(sortMap, kv{i, perCombinePerFold[i][combine]})
@@ -240,11 +244,11 @@ func mostDemandFold(perCombinePerFold map[int]map[string]float64, perLabelPerFol
 	demandValue := sortMap[0].Value
 	var sortMap2 []kv
 	for i := 0; i < nFold; i++ {
-		if demandValue == perCombinePerFold[i][combine] {
+		if AlmostEqual(demandValue, perCombinePerFold[i][combine]) {
 			sortMap2 = append(sortMap2, kv{i, perFold[i]})
 		}
 	}
-	//if so, roll the dice
+	//if so, check perFold value
 	if len(sortMap2) == 1 {
 		return sortMap2[0].Key
 	} else {
@@ -254,15 +258,15 @@ func mostDemandFold(perCombinePerFold map[int]map[string]float64, perLabelPerFol
 		demandValue2 := sortMap2[0].Value
 		foldsIdx := make([]int, 0)
 		for j := 0; j < nFold; j++ {
-			if demandValue2 == perFold[j] {
+			if AlmostEqual(demandValue2, perFold[j]) {
 				foldsIdx = append(foldsIdx, j)
 			}
 		}
 		if len(foldsIdx) == 1 {
 			return foldsIdx[0]
 		} else {
-			n := randInt % len(foldsIdx)
-			return foldsIdx[n]
+			//	n := randInt % len(foldsIdx)
+			return foldsIdx[0]
 		}
 
 	}
@@ -303,13 +307,13 @@ func genCombines(rowVec []float64, labelRatio map[int]float64) (key string, sum 
 	sum = 0
 	for i := 0; i < len(rowVec); i++ {
 		key = key + strconv.Itoa(int(rowVec[i]))
-		if rowVec[i] == 1.0 {
+		if AlmostEqual(rowVec[i], 1.0) {
 			sum += labelRatio[i]
 			ele := []int{i}
 			sets = append(sets, ele)
 			setScore = append(setScore, labelRatio[i])
 			for j := i + 1; j < len(rowVec); j++ {
-				if rowVec[j] == 1.0 {
+				if AlmostEqual(rowVec[j], 1.0) {
 					ele := []int{i, j}
 					sets = append(sets, ele)
 					setScore = append(setScore, labelRatio[i]+labelRatio[j])
@@ -334,12 +338,15 @@ func genCombines(rowVec []float64, labelRatio map[int]float64) (key string, sum 
 
 func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, colSum *mat64.Dense, combineScore map[string]float64) {
 	labelScore = make(map[int]float64, 0)
+	//equal label Score introduce random order in sampling
+	//thus introduce this var for nr labelScore
+	existColSum := make(map[int]string, 0)
 	combineScore = make(map[string]float64, 0)
 	nRow, nCol := trY.Caps()
 	colSum = mat64.NewDense(1, nCol, nil)
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nCol; j++ {
-			if trY.At(i, j) == 1.0 {
+			if AlmostEqual(trY.At(i, j), 1.0) {
 				colSum.Set(0, j, colSum.At(0, j)+1)
 			}
 		}
@@ -352,8 +359,17 @@ func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, colSum *mat64.Den
 		}
 	}
 	//label Score
+
 	for j := 0; j < nCol; j++ {
-		labelScore[j] = max / colSum.At(0, j)
+		cs := colSum.At(0, j)
+		_, ok := existColSum[int(cs)]
+		if !ok {
+			existColSum[int(cs)] = ""
+		} else {
+			cs += 1.0
+			existColSum[int(cs)] = ""
+		}
+		labelScore[j] = max / cs
 		ele := strconv.Itoa(j)
 		combineScore[ele] = labelScore[j]
 	}
@@ -368,7 +384,7 @@ func labelRatio(trY *mat64.Dense) (labelScore map[int]float64, colSum *mat64.Den
 	return labelScore, colSum, combineScore
 }
 
-func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, nFold int, thresRatio float64) (minorLabelFold int, isMinorLabel bool) {
+func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64, labelRatio map[int]float64, nFold int, thresRatio float64, thresLabelRatio float64) (minorLabelFold int, isMinorLabel bool) {
 	//init
 	minorLabelFold = -1
 	isMinorLabel = false
@@ -387,10 +403,17 @@ func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64
 			ele = idx[1]
 		}
 	}
+
+	//only minorLabels used this function
+	eleInt, _ := strconv.Atoi(ele)
+	if labelRatio[eleInt] < thresLabelRatio {
+		return minorLabelFold, isMinorLabel
+	}
+
 	//find empty subset
 	for i := 0; i < nFold; i++ {
 		//mark empty subset directly and break
-		if perLabelPerFold[i][ele] == 0.0 {
+		if AlmostEqual(perLabelPerFold[i][ele], 0.0) {
 			minorLabelFold = i
 			isMinorLabel = true
 			break
@@ -422,10 +445,11 @@ func mostUnderRepFold(combine string, perLabelPerFold map[int]map[string]float64
 	return minorLabelFold, isMinorLabel
 }
 
-func overSampleMinorLabel(trY *mat64.Dense, minPosPerFold int, nFold int, colSum *mat64.Dense) (folds map[int][]int, rowUsed map[int]bool) {
+func underSampleMinorLabel(trY *mat64.Dense, minPosPerFold int, nFold int, colSum *mat64.Dense) (folds map[int][]int, rowUsed map[int]bool) {
 	nRow, nLabel := trY.Caps()
 	minPos := float64(minPosPerFold * nFold)
 	perLabelRequired := make(map[int]float64)
+	perLabelPerFoldForTest := make(map[int]map[int]float64)
 	rowUsed = make(map[int]bool)
 	//init folds
 	folds = make(map[int][]int)
@@ -440,8 +464,18 @@ func overSampleMinorLabel(trY *mat64.Dense, minPosPerFold int, nFold int, colSum
 	for i := 0; i < nLabel; i++ {
 		if colSum.At(0, i) < minPos {
 			perLabelRequired[i] = 1.0 + (minPos-colSum.At(0, i))/float64(nFold)
+			tmpMap := make(map[int]float64)
+			for f := 0; f < nFold; f++ {
+				tmpMap[f] = 1.0 + (minPos-colSum.At(0, i))/float64(nFold)
+			}
+			perLabelPerFoldForTest[i] = tmpMap
 		} else {
 			perLabelRequired[i] = 0.0
+			tmpMap := make(map[int]float64)
+			for f := 0; f < nFold; f++ {
+				tmpMap[f] = 0.0
+			}
+			perLabelPerFoldForTest[i] = tmpMap
 		}
 	}
 	//sort the demanding label
@@ -461,16 +495,28 @@ func overSampleMinorLabel(trY *mat64.Dense, minPosPerFold int, nFold int, colSum
 		} else {
 			for p := 0; p < nRow; p++ {
 				//row with the demanding minor label
-				if trY.At(p, idx) == 1.0 && !rowUsed[p] {
+				if AlmostEqual(trY.At(p, idx), 1.0) && !rowUsed[p] {
 					rowUsed[p] = true
-					//row pushed to all folds
-					for j := 0; j < nFold; j++ {
-						folds[j] = append(folds[j], p)
+					//row pushed to most demand fold,smallest
+					for i := 0; i < nFold; i++ {
+						sortMap = append(sortMap, kv{i, perLabelPerFoldForTest[idx][i]})
 					}
-					//updating perLabelRequired counts for all minor label
-					for q := 0; q < nLabel; q++ {
-						if trY.At(p, q) == 1.0 {
-							perLabelRequired[q] -= 1.0
+					sort.Slice(sortMap, func(i, j int) bool {
+						return sortMap[i].Value < sortMap[j].Value
+					})
+					smallestCount := sortMap[0].Value
+					for j := 0; j < nFold; j++ {
+						if AlmostEqual(perLabelPerFoldForTest[idx][j], smallestCount) {
+							folds[j] = append(folds[j], p)
+							perLabelPerFoldForTest[idx][j] -= 1.0
+							//updating perLabelRequired counts for other possible minor label
+							for q := 0; q < nLabel; q++ {
+								if AlmostEqual(trY.At(p, q), 1.0) && q != idx {
+									perLabelPerFoldForTest[q][j] -= 1.0
+									perLabelRequired[q] -= 1.0 / float64(nFold)
+								}
+							}
+							break
 						}
 					}
 				}
@@ -481,17 +527,25 @@ func overSampleMinorLabel(trY *mat64.Dense, minPosPerFold int, nFold int, colSum
 	return folds, rowUsed
 }
 
-func updateStatAfterOverSampling(nFold int, rowUsed map[int]bool, sampleWithCombineMap map[string]combineList, perRowCombine map[int][][]int, perCombinePerFold map[int]map[string]float64, perLabelPerFold map[int]map[string]float64, perFold map[int]float64) (sampleWithCombineMap2 map[string]combineList, perCombinePerFold2 map[int]map[string]float64, perLabelPerFold2 map[int]map[string]float64, perFold2 map[int]float64) {
+func updateStatAfterUnderSampling(nFold int, rowUsed map[int]bool, sampleWithCombineMap map[string]combineList, perRowCombine map[int][][]int, perCombinePerFold map[int]map[string]float64, perLabelPerFold map[int]map[string]float64, perFold map[int]float64) (sampleWithCombineMap2 map[string]combineList, perCombinePerFold2 map[int]map[string]float64, perLabelPerFold2 map[int]map[string]float64, perFold2 map[int]float64) {
 	//remove this rowIdx in all sampleWithCombineMap
 	//sampleWithCombineMap count -1 as well
-	for rowIdx, isUsed := range rowUsed {
+	//for rowIdx, isUsed := range rowUsed {
+	for rowIdx := 0; rowIdx < len(rowUsed); rowIdx++ {
+		isUsed := rowUsed[rowIdx]
 		if isUsed {
-			for k, cl := range sampleWithCombineMap {
+			tmpKarr := make([]string, 0)
+			for k, _ := range sampleWithCombineMap {
+				tmpKarr = append(tmpKarr, k)
+			}
+			sort.Strings(tmpKarr)
+			for k := 0; k < len(tmpKarr); k++ {
+				cl := sampleWithCombineMap[tmpKarr[k]]
 				for l := 0; l < len(cl.Rows); l++ {
 					if cl.Rows[l] == rowIdx {
 						cl.Rows = remove(cl.Rows, l)
 						cl.Count -= 1
-						sampleWithCombineMap[k] = cl
+						sampleWithCombineMap[tmpKarr[k]] = cl
 						break
 					}
 				}
@@ -543,7 +597,7 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 	meanLabel := 0.0
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nColY; j++ {
-			if trYdata.At(i, j) == 1.0 {
+			if AlmostEqual(trYdata.At(i, j), 1.0) {
 				meanLabel += 1.0
 				colSum[j] += 1.0
 			}
@@ -585,7 +639,7 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 				}
 				//row with the demanding minor label
 				//if trYdata.At(p, idx) == 1.0 && !rowUsed[p] {
-				if trYsub.At(p, idx) == 1.0 {
+				if AlmostEqual(trYsub.At(p, idx), 1.0) {
 					//rowUsed[p] = true
 					//row synthetic from k nearest neighbors in feature set
 					//note 1st instance in DistanceTopK is itself
@@ -608,12 +662,12 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 							trYsyn[synIdx] = tmp2
 							for m := 0; m < nColY; m++ {
 								tmpL := 0.0
-								if trYsub.At(nnIdx[0], m) == 1.0 {
+								if AlmostEqual(trYsub.At(nnIdx[0], m), 1.0) {
 									//updating perLabelRequired counts for all minor label
 									perLabelRequired[m] -= 1.0
 									tmpL = 1.0
 								}
-								if trYsub.At(nnIdx[q], m) == 1.0 {
+								if AlmostEqual(trYsub.At(nnIdx[q], m), 1.0) {
 									//updating perLabelRequired counts for all minor label
 									perLabelRequired[m] -= 1.0
 									tmpL = 1.0
@@ -645,7 +699,7 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 			}
 			for j := 0; j < nColY; j++ {
 				synTrYdata.Set(i, j, trYsyn[i][j])
-				if trYsyn[i][j] == 1.0 {
+				if AlmostEqual(trYsyn[i][j], 1.0) {
 					nSynPos[j] += 1
 				}
 			}

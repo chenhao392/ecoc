@@ -93,6 +93,7 @@ Propagating a set of labels on networks.
 		//read data
 		tsRowName := src.ReadIDfile(tsGene)
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
+		//_, _, transLabels := src.LabelRelationship(trYdata)
 		tsXdata := mat64.NewDense(0, 0, nil)
 		trXdata := mat64.NewDense(0, 0, nil)
 		// for filtering prior genes, only those in training set are used for propagation
@@ -108,8 +109,10 @@ Propagating a set of labels on networks.
 			log.Print("loading network file: ", inNetworkFile[i])
 			network, idIdx, idxToId := src.ReadNetwork(inNetworkFile[i])
 			if !isAddPrior {
-				sPriorData, ind := src.PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, isDada, alpha, &wg, &mutex)
+				sPriorData, ind := src.PropagateSetDLP(network, trYdata, idIdx, trRowName, trGeneMap, alpha, threads, &wg)
 				tsXdata, trXdata = src.FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+				_, nCol := trXdata.Caps()
+				log.Print("trX nCol: ", nCol)
 			} else {
 				for j := 0; j < len(priorMatrixFile); j++ {
 					priorData, priorGeneID, priorIdxToId := src.ReadNetwork(priorMatrixFile[j])
@@ -121,13 +124,15 @@ Propagating a set of labels on networks.
 		_, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
-			log.Print("number of features less than number of labels to classify.", nFea, nLabel, "\nexit...")
+			log.Print("number of features less than number of labels to classify. ", nFea, nLabel, "\nexit...")
 			os.Exit(0)
 		}
 		//result file.
-		oFile := "./" + resFolder + ".trX.txt"
+		_, nCol := trXdata.Caps()
+		log.Print("trX nCol: ", nCol)
+		oFile := "./" + resFolder + "/trX.txt"
 		src.WriteFile(oFile, trXdata, nil, false)
-		oFile = "./" + resFolder + ".tsX.txt"
+		oFile = "./" + resFolder + "/tsX.txt"
 		src.WriteFile(oFile, tsXdata, nil, false)
 		log.Print("Program finished.")
 	},

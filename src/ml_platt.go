@@ -44,8 +44,32 @@ func PerlLabelQuantileNorm(YhSet map[int]*mat64.Dense, cBestArr []int) (tsYhat *
 	return tsYhat
 }
 
+func PerlLabelScaleSet(YhSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dense, cBestArr []int) (Yhh *mat64.Dense) {
+	nRow, nCol := YhSet[0].Caps()
+	Yhh = mat64.NewDense(nRow, nCol, nil)
+	for j := 0; j < len(cBestArr); j++ {
+		cBest := cBestArr[j]
+		//plattABset index is for all labels only, not all Cs
+		tsYhatTmp := PlattScaleSet(YhSet[cBest], plattABset[j])
+		tsYhatTmp, _ = QuantileNorm(tsYhatTmp, mat64.NewDense(0, 0, nil), false)
+		//yhh := PlattScale(YhSet[cBest].ColView(j), plattAB[j].At(0, j), plattAB[j].At(1, j))
+		for i := 0; i < nRow; i++ {
+			Yhh.Set(i, j, tsYhatTmp.At(i, j))
+		}
+	}
+	return Yhh
+}
+
 func QuantileNorm(data *mat64.Dense, thresData *mat64.Dense, isTransThres bool) (normData *mat64.Dense, normThresData *mat64.Dense) {
 	nRow, nCol := data.Caps()
+	//colSum
+	colsum := make([]float64, nCol)
+	for i := 0; i < nRow; i++ {
+		for j := 0; j < nCol; j++ {
+			colsum[j] += data.At(i, j)
+		}
+	}
+	//init
 	normData = mat64.NewDense(nRow, nCol, nil)
 	rowTotalData := mat64.NewDense(0, 0, nil)
 	if isTransThres {
@@ -54,7 +78,12 @@ func QuantileNorm(data *mat64.Dense, thresData *mat64.Dense, isTransThres bool) 
 		rowTotalData = mat64.NewDense(nRow, 1, nil)
 	}
 	normThresData = mat64.NewDense(1, nCol, nil)
+	//sort and fill
 	for j := 0; j < nCol; j++ {
+		//skip all zero value label column
+		if AlmostEqual(colsum[j], 0.0) {
+			continue
+		}
 		var sortYh []kv
 		for i := 0; i < nRow; i++ {
 			sortYh = append(sortYh, kv{i, data.At(i, j)})
@@ -114,14 +143,17 @@ func QuantileNorm(data *mat64.Dense, thresData *mat64.Dense, isTransThres bool) 
 	for j := 0; j < nCol; j++ {
 		for i := 0; i <= nRow; i++ {
 			if isTransThres && i == nRow {
-				rank := int(normThresData.At(0, j))
-				//fmt.Println(i, j, rank)
-				normThresData.Set(0, j, rowTotalData.At(rank, 0))
+				if AlmostEqual(colsum[j], 0.0) {
+					normThresData.Set(0, j, 1.0)
+				} else {
+					rank := int(normThresData.At(0, j))
+					normThresData.Set(0, j, rowTotalData.At(rank, 0))
+				}
 			} else {
 				if !isTransThres && i == nRow {
 					//skip last row if no thres data
 					//as no nRow index for sortYh and matrix
-				} else {
+				} else if !AlmostEqual(colsum[j], 0.0) {
 					rank := int(normData.At(i, j))
 					normData.Set(i, j, rowTotalData.At(rank, 0))
 				}
@@ -149,10 +181,11 @@ func ColMaxMin(data *mat64.Dense) {
 	}
 
 }
-func LabelRelationship(trYdata *mat64.Dense) (posLabelRls *mat64.Dense, negLabelRls *mat64.Dense) {
+func LabelRelationship(trYdata *mat64.Dense) (posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, transLabels *mat64.Dense) {
 	nRow, nCol := trYdata.Caps()
 	posLabelRls = mat64.NewDense(nCol, nCol, nil)
 	negLabelRls = mat64.NewDense(nCol, nCol, nil)
+	transLabels = mat64.NewDense(nCol, nCol, nil)
 	for j := 0; j < nCol; j++ {
 		//colSums
 		jColSum := 0.0
@@ -188,11 +221,15 @@ func LabelRelationship(trYdata *mat64.Dense) (posLabelRls *mat64.Dense, negLabel
 				negRls := nConNeg/nNeg - term2
 				posLabelRls.Set(k, j, posRls)
 				negLabelRls.Set(k, j, negRls)
+				//transition probability from label j to label k
+				transLabels.Set(k, j, nConPos/jColSum)
+			} else {
+				//transLabels.Set(k, j, 1.0)
 			}
 		}
 	}
 	// note this is an upper right filled matrix and the influence go from row index to col index
-	return posLabelRls, negLabelRls
+	return posLabelRls, negLabelRls, transLabels
 }
 
 func SelectPlattAB(cBest int, plattASet *mat64.Dense, plattBSet *mat64.Dense, plattCountSet *mat64.Dense) (plattAB *mat64.Dense) {
@@ -228,20 +265,16 @@ func Platt(trYhat *mat64.Dense, trY *mat64.Dense, tsYhat *mat64.Dense, lamdaArr 
 	mseArr = make([]float64, 0)
 	plattAB = mat64.NewDense(2, nCol, nil)
 	for i := 0; i < nCol; i++ {
-		//fmt.Println(i, lamdaArr[i])
 		trYhatCol, trYcol := minusValueFilterForPlatt(trYhat.ColView(i), trY.ColView(i))
 		trYhatColTMM, trYcolTMM := TmmFilterForPlatt(trYhatCol, trYcol, lamdaArr[i])
-		//fmt.Println(i, trY.ColView(i))
-		//trYhatColTMM, trYcolTMM := TmmFilterForPlatt(trYhat.ColView(i), trY.ColView(i))
 		A, B := PlattParameterEst(trYhatColTMM, trYcolTMM)
-		//fmt.Println(i, A, B)
 		plattAB.Set(0, i, A)
 		plattAB.Set(1, i, B)
-		yhh := PlattScale(tsYhat.ColView(i), A, B)
+		tmpCol := minusValueFilter(tsYhat.ColView(i))
+		yhh := PlattScale(tmpCol, A, B)
 		tsYhh.SetCol(i, yhh)
-		mse := MSE(trY.ColView(i), tsYhh.ColView(i))
+		mse := MSE(trYcol, trYhatCol)
 		mseArr = append(mseArr, mse)
-		//mseM.Set(0, i, mse)
 	}
 	return tsYhh, plattAB, mseArr
 }
@@ -445,6 +478,19 @@ func minusValueFilterForPlatt(inTrYhat *mat64.Vector, inTrY *mat64.Vector) (trYh
 	return trYhat, trY
 }
 
+func minusValueFilter(inData *mat64.Vector) (outData *mat64.Vector) {
+	tmpOut := make([]float64, 0)
+	for i := 0; i < inData.Len(); i++ {
+		if inData.At(i, 0) == -1.0 {
+			tmpOut = append(tmpOut, 0.0)
+		} else {
+			tmpOut = append(tmpOut, inData.At(i, 0))
+		}
+	}
+	outData = mat64.NewVector(len(tmpOut), tmpOut)
+	return outData
+}
+
 func PlattScaleSet(Yh *mat64.Dense, plattAB *mat64.Dense) (Yhh *mat64.Dense) {
 	nRow, nCol := Yh.Caps()
 	Yhh = mat64.NewDense(nRow, nCol, nil)
@@ -510,10 +556,6 @@ func PlattScaleSetPseudoLabel(tsYhat *mat64.Dense, trYdata *mat64.Dense, thres *
 }
 
 func pseudoLabel(nPos int, Yh *mat64.Vector) (pseudoY *mat64.Vector) {
-	//type kv struct {
-	//	Key   int
-	//	Value float64
-	//}
 	n := Yh.Len()
 	var sortYh []kv
 	for i := 0; i < n; i++ {
@@ -540,6 +582,8 @@ func pseudoLabel(nPos int, Yh *mat64.Vector) (pseudoY *mat64.Vector) {
 }
 
 func PlattScale(Yh *mat64.Vector, A float64, B float64) (Yhh []float64) {
+	//rescale to 0-1
+	//vectorRescale(Yh)
 	len := Yh.Len()
 	Yhh = make([]float64, 0)
 	max := 0.0
@@ -557,44 +601,14 @@ func PlattScale(Yh *mat64.Vector, A float64, B float64) (Yhh []float64) {
 
 	//init scale
 	scale := max - min
-	//nonOneMax := 0.0
-	//nonZeroMin := 1.0
+	//if scale == 0
+	if scale == 0.0 {
+		scale = max
+	}
 	for i := 0; i < len; i++ {
 		Yhh[i] = (Yhh[i] - min) / scale
-		//	if Yhh[i] <= 0.9999999 && Yhh[i] > nonOneMax {
-		//		nonOneMax = Yhh[i]
-		//	}
-		//	if Yhh[i] >= 0.0 && Yhh[i] < nonZeroMin {
-		//		nonZeroMin = Yhh[i]
-		//	}
 	}
 
-	//loop until instance interval at both ends smaller than thres
-	//for nonOneMax <= 0.95 || nonZeroMin >= 0.05 {
-	//	log.Print("trigger rescale in Platt, with non-one max ", nonOneMax, " and non-zero min ", nonZeroMin)
-	//	scale := nonOneMax - nonZeroMin
-	//	min = nonZeroMin //for scaling function
-	//	nonOneMax = 0.0
-	//	nonZeroMin = 1.0
-	//	for i := 0; i < len; i++ {
-	//		Yhh[i] = (Yhh[i] - min) / scale
-	//		if Yhh[i] < 0.9999999 && Yhh[i] > nonOneMax {
-	//			nonOneMax = Yhh[i]
-	//		}
-	//		if Yhh[i] > 0.0 && Yhh[i] < nonZeroMin {
-	//			nonZeroMin = Yhh[i]
-	//		}
-	//		//tail value smaller than zero reset as zero
-	//		if Yhh[i] < 0.0 {
-	//			Yhh[i] = 0.0
-	//		}
-	//		//head value greater than one reset as one
-	//		if Yhh[i] > 1.0 {
-	//			Yhh[i] = 1.0
-	//		}
-	//	}
-
-	//}
 	return Yhh
 }
 
@@ -754,21 +768,53 @@ func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Den
 			nRowTest += 1
 		}
 	}
+	//from  yPlattSet[c], yPredSet[c], xSet[c],  xSet[c] ,YhPlattSet[c], yPlattSet[c]
+	//from  Y(train)    , predBinY   , X(train), X(test) ,Yh,            Y(test)
 	return yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold
 }
-func PerlLabelMultiLabelRecalibrate(cBestArr []int, kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattSet map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
-	nRow, nCol := tsYhat.Caps()
+func PerlLabelMultiLabelRecalibrate(YhSet map[int]*mat64.Dense, cBestArr []int, kNN int, trainMeasure *mat64.Dense, xTest *mat64.Dense, yPlattSet map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dense, thresSet map[int]*mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
+
+	nRow, nCol := YhSet[cBestArr[0]].Caps()
+	nRowTr, nColY := yPlattSet[cBestArr[0]].Caps()
+	_, nColX := xSet[cBestArr[0]].Caps()
 	tsYhatCal = mat64.NewDense(nRow, nCol, nil)
+	yPlattAL := mat64.NewDense(nRowTr, nColY, nil)
+	yPredAL := mat64.NewDense(nRowTr, nColY, nil)
+	xAL := mat64.NewDense(nRowTr, nColX, nil)
 	for j := 0; j < len(cBestArr); j++ {
 		cBest := cBestArr[j]
-		tsYhatPerLabel := MultiLabelRecalibrate(kNN, tsYhat, xTest, yPlattSet[cBest], yPredSet[cBest], xSet[cBest], posLabelRls, negLabelRls, wg, mutex)
-		for i := 0; i < nRow; i++ {
-			tsYhatCal.Set(i, j, tsYhatPerLabel.At(i, j))
+		//scales, plattABset and thresSet is for all label, not all Cs
+		tsYhat := PlattScaleSet(YhSet[cBest], plattABset[j])
+		tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
+		tsYhat, _ = SoftThresScale(tsYhat, thresSet[j])
+		//top labels
+		macroAuprSet := make([]float64, 0)
+		for p := 0; p < len(cBestArr); p++ {
+			idx := 13 + p*2
+			macroAuprSet = append(macroAuprSet, trainMeasure.At(cBest, idx))
 		}
+		kNNidx := TopKnnLabelIdx(macroAuprSet, 0.5)
+		//y,yPred and x for this cBest
+		for i := 0; i < nRowTr; i++ {
+			for l := 0; l < len(cBestArr); l++ {
+				yPlattAL.Set(i, l, yPlattSet[cBest].At(i, l))
+				yPredAL.Set(i, l, yPredSet[cBest].At(i, l))
+			}
+			for k := 0; k < nColX; k++ {
+				xAL.Set(i, k, xSet[cBest].At(i, k))
+			}
+		}
+		log.Print("col: ", j, ", cBest: ", cBest)
+		LogColSum(tsYhat)
+		tsYhatCalTmp := MultiLabelRecalibrate(kNN, tsYhat, xTest, yPlattAL, yPredAL, xAL, posLabelRls, negLabelRls, kNNidx, wg, mutex)
+		for i := 0; i < nRow; i++ {
+			tsYhatCal.Set(i, j, tsYhatCalTmp.At(i, j))
+		}
+		LogColSum(tsYhatCal)
 	}
 	return tsYhatCal
 }
-func MultiLabelRecalibrate(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
+func MultiLabelRecalibrate(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, kNNidx map[int]int, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
 	nRow, nCol := tsYhat.Caps()
 	tsYhatCal = mat64.NewDense(nRow, nCol, nil)
 	nTrainRow, _ := xTrain.Caps()
@@ -778,14 +824,14 @@ func MultiLabelRecalibrate(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPl
 	}
 	wg.Add(nRow)
 	for i := 0; i < nRow; i++ {
-		go single_MultiLabelRecalibrate(kNN, i, nCol, tsYhatCal, tsYhat, xTest, xTrain, yPlattTrain, yPredTrain, posLabelRls, negLabelRls, wg, mutex)
+		go single_MultiLabelRecalibrate(kNN, i, nCol, tsYhatCal, tsYhat, xTest, xTrain, yPlattTrain, yPredTrain, posLabelRls, negLabelRls, kNNidx, wg, mutex)
 	}
 	wg.Wait()
 	runtime.GC()
 	return tsYhatCal
 }
 
-func single_MultiLabelRecalibrate(kNN int, i int, nCol int, tsYhatCal *mat64.Dense, tsYhat *mat64.Dense, xTest *mat64.Dense, xTrain *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+func single_MultiLabelRecalibrate(kNN int, i int, nCol int, tsYhatCal *mat64.Dense, tsYhat *mat64.Dense, xTest *mat64.Dense, xTrain *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, kNNidx map[int]int, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
 	idxArr := DistanceTopK(kNN, i, xTest, xTrain)
 	weight1 := 0.0
@@ -802,16 +848,22 @@ func single_MultiLabelRecalibrate(kNN int, i int, nCol int, tsYhatCal *mat64.Den
 		//label influence
 		labelRls = 0.0
 		for m := 0; m < nCol; m++ {
-			// m == j cases are set as zero in LabelRelationship
-			labelRls += tsYhat.At(i, m)*posLabelRls.At(m, j) + (1-tsYhat.At(i, m))*negLabelRls.At(m, j)
+			_, ok := kNNidx[m]
+			if ok {
+				// m == j cases are set as zero in LabelRelationship
+				labelRls += tsYhat.At(i, m)*posLabelRls.At(m, j) + (1-tsYhat.At(i, m))*negLabelRls.At(m, j)
+			}
 		}
-		prob := weight1*tsYhat.At(i, j) + weight2*labelRls/float64(nCol-1)
+		prob := weight1*tsYhat.At(i, j) + weight2*labelRls/float64(len(kNNidx)-1)
+		if prob < 0.0 {
+			prob = 0.0
+		}
 		mutex.Lock()
 		tsYhatCal.Set(i, j, prob)
 		mutex.Unlock()
 	}
 }
-func MultiLabelRecalibrate_SingleThread(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense) (tsYhatCal *mat64.Dense) {
+func MultiLabelRecalibrate_SingleThread(kNN int, tsYhat *mat64.Dense, xTest *mat64.Dense, yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, kNNidx map[int]int) (tsYhatCal *mat64.Dense) {
 	nRow, nCol := tsYhat.Caps()
 	tsYhatCal = mat64.NewDense(nRow, nCol, nil)
 	nTrainRow, _ := xTrain.Caps()
@@ -836,14 +888,40 @@ func MultiLabelRecalibrate_SingleThread(kNN int, tsYhat *mat64.Dense, xTest *mat
 			//label influence
 			labelRls = 0.0
 			for m := 0; m < nCol; m++ {
-				// m == j cases are set as zero in LabelRelationship
-				labelRls += tsYhat.At(i, m)*posLabelRls.At(m, j) + (1-tsYhat.At(i, m))*negLabelRls.At(m, j)
+				_, ok := kNNidx[m]
+				if ok {
+					// m == j cases are set as zero in LabelRelationship
+					labelRls += tsYhat.At(i, m)*posLabelRls.At(m, j) + (1-tsYhat.At(i, m))*negLabelRls.At(m, j)
+				}
 			}
-			prob := weight1*tsYhat.At(i, j) + weight2*labelRls/float64(nCol-1)
+			prob := weight1*tsYhat.At(i, j) + weight2*labelRls/float64(len(kNNidx)-1)
+			if prob < 0.0 {
+				prob = 0.0
+			}
 			tsYhatCal.Set(i, j, prob)
 		}
 	}
 	return tsYhatCal
+}
+
+func TopKnnLabelIdx(macroAuprSet []float64, ratio float64) (kNNidx map[int]int) {
+	var sortAupr []kv
+	nIdx := int(ratio * float64(len(macroAuprSet)))
+	kNNidx = make(map[int]int, nIdx)
+	for i := 0; i < len(macroAuprSet); i++ {
+		sortAupr = append(sortAupr, kv{i, macroAuprSet[i]})
+	}
+	sort.Slice(sortAupr, func(i, j int) bool {
+		return sortAupr[i].Value > sortAupr[j].Value
+	})
+
+	for i := 0; i < len(macroAuprSet); i++ {
+		if nIdx >= 0 {
+			kNNidx[sortAupr[i].Key] = i
+			nIdx -= 1
+		}
+	}
+	return kNNidx
 }
 
 //select top k rows in yPredTrain that is closed to row rowIdx in tsYhat
@@ -876,4 +954,22 @@ func DistanceTopK(k int, rowIdx int, tsYhat *mat64.Dense, yProbTrain *mat64.Dens
 		idxArr = append(idxArr, selectDis[i].Key)
 	}
 	return idxArr
+}
+
+//rescale to 0-1
+func vectorRescale(data *mat64.Vector) {
+	len := data.Len()
+	max := 0.0
+	for i := 0; i < len; i++ {
+		if data.At(i, 0) > max {
+			max = data.At(i, 0)
+		}
+	}
+	if max == 0.0 {
+		max = 1.0
+	}
+	for i := 0; i < len; i++ {
+		ele := data.At(i, 0)
+		data.SetVec(i, ele/max)
+	}
 }
