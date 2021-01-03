@@ -44,14 +44,20 @@ func PerlLabelQuantileNorm(YhSet map[int]*mat64.Dense, cBestArr []int) (tsYhat *
 	return tsYhat
 }
 
-func PerlLabelScaleSet(YhSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dense, cBestArr []int) (Yhh *mat64.Dense) {
+func PerLabelScaleSet(YhSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dense, cBestArr []int) (Yhh *mat64.Dense) {
 	nRow, nCol := YhSet[0].Caps()
 	Yhh = mat64.NewDense(nRow, nCol, nil)
 	for j := 0; j < len(cBestArr); j++ {
 		cBest := cBestArr[j]
 		//plattABset index is for all labels only, not all Cs
+		//YhSet[cBest], _ = QuantileNorm(YhSet[cBest], mat64.NewDense(0, 0, nil), false)
+		log.Print("platt parameters:", cBest, plattABset[j].At(0, j), plattABset[j].At(1, j))
+		LogColSum(YhSet[cBest])
 		tsYhatTmp := PlattScaleSet(YhSet[cBest], plattABset[j])
+		LogColSum(tsYhatTmp)
 		tsYhatTmp, _ = QuantileNorm(tsYhatTmp, mat64.NewDense(0, 0, nil), false)
+		//tsYhatTmp, _ := QuantileNorm(YhSet[cBest], mat64.NewDense(0, 0, nil), false)
+		LogColSum(tsYhatTmp)
 		//yhh := PlattScale(YhSet[cBest].ColView(j), plattAB[j].At(0, j), plattAB[j].At(1, j))
 		for i := 0; i < nRow; i++ {
 			Yhh.Set(i, j, tsYhatTmp.At(i, j))
@@ -617,7 +623,7 @@ func PlattParameterEst(Yh *mat64.Vector, Y *mat64.Vector) (A float64, B float64)
 	p1 := 0.0
 	p0 := 0.0
 	iter := 0
-	maxIter := 100
+	maxIter := 1000
 	minStep := 0.0000000001
 	sigma := 0.000000000001
 	len := Y.Len()
@@ -949,9 +955,18 @@ func DistanceTopK(k int, rowIdx int, tsYhat *mat64.Dense, yProbTrain *mat64.Dens
 		selectDis = append(selectDis, kv{i, dis})
 	}
 	quickselect.QuickSelect(ByValue(selectDis), k)
+
+	//reorder for minDis idx at first
+	var sortMap []kv
+	for i := 0; i < k; i++ {
+		sortMap = append(sortMap, kv{selectDis[i].Key, selectDis[i].Value})
+	}
+	sort.Slice(sortMap, func(i, j int) bool {
+		return sortMap[i].Value < sortMap[j].Value
+	})
 	//disArr normalized by maxDis
 	for i := 0; i < k; i++ {
-		idxArr = append(idxArr, selectDis[i].Key)
+		idxArr = append(idxArr, sortMap[i].Key)
 	}
 	return idxArr
 }

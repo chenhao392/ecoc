@@ -75,7 +75,6 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		tsY, _ := cmd.Flags().GetString("tsY")
 		trY, _ := cmd.Flags().GetString("trY")
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
-		priorMatrixFiles := ""
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
 		rankCut, _ := cmd.Flags().GetInt("c")
@@ -92,7 +91,6 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		alpha, _ := cmd.Flags().GetFloat64("alpha")
 		mlsRatio, _ := cmd.Flags().GetFloat64("mlsRatio")
 		isVerbose, _ := cmd.Flags().GetBool("v")
-		isAddPrior := false
 		fBetaThres := 1.0
 		isAutoBeta := true
 
@@ -112,11 +110,9 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
 		posLabelRls, negLabelRls, transLabels := src.LabelRelationship(trYdata)
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
-		priorMatrixFile := strings.Split(priorMatrixFiles, ",")
 		//folds
 		folds := src.SOIS(trYdata, nFold, 10, 2, true)
-		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
-		//tsXdata, trXdata, indAccum, meanNet, idIdx, idxToId := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
+		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, transLabels, isDada, alpha, threads, &wg, &mutex)
 		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
@@ -153,22 +149,23 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		testFold := make([]src.CvFold, nFold)
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, &wg, &mutex)
-			//cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, priorMatrixFile, transLabels, isAddPrior, isDada, alpha, threads, meanNet, idIdx, idxToId, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccumCV := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, transLabels, isDada, alpha, threads, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
-			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
+			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccumCV)
 		}
+		trainFold, testFold, tsXdata, indAccum = src.ConsistencyIndAccum(trainFold, testFold, tsXdata, indAccum)
 		//MLSOTE for the folds
 		if mlsRatio > 0.0 {
 			for f := 0; f < nFold; f++ {
 				trXdataTmp, trYdataTmp := src.MLSMOTE(trainFold[f].X, trainFold[f].Y, 5, mlsRatio, randValues)
-				//tsXdataTmp, tsYdataTmp := src.MLSMOTE(testFold[f].X, testFold[f].Y, 5, randValues)
+				tsXdataTmp, tsYdataTmp := src.MLSMOTE(testFold[f].X, testFold[f].Y, 5, mlsRatio, randValues)
 				trainFold[f].X = trXdataTmp
 				trainFold[f].Y = trYdataTmp
-				//testFold[f].X = tsXdataTmp
-				//testFold[f].Y = tsYdataTmp
+				testFold[f].X = tsXdataTmp
+				testFold[f].Y = tsYdataTmp
 			}
 		}
+		//trainFold, testFold, tsXdata = src.ConsistencyScale(trainFold, testFold, tsXdata)
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
 		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)

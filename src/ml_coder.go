@@ -6,7 +6,6 @@ import (
 	"gonum.org/v1/gonum/stat/distuv"
 	"log"
 	"math"
-	//"math/rand"
 	"runtime"
 	"sync"
 )
@@ -75,9 +74,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	_, nLabel := trYdata.Caps()
 	nTr, nFea := trXdata.Caps()
 	nTs, _ := tsXdata.Caps()
-	//for rands
-	//randValues := RandListFromUniDist(nTr, nFea)
-	//idxPerm := rand.Perm(nTr)
 	//min dims
 	minDims := int(math.Min(float64(nFea), float64(nLabel)))
 	if nFea < nLabel {
@@ -90,7 +86,6 @@ func EcocRun(tsXdata *mat64.Dense, tsYdata *mat64.Dense, trXdata *mat64.Dense, t
 	//adding bias term for tsXData, trXdata
 	tsXdataB := addBiasTerm(nTs, tsXdata)
 	trXdataB := addBiasTerm(nTr, trXdata)
-	//regM := mat64.NewDense(1, nLabel, nil)
 	//step 1
 	wg.Add(nLabel)
 	for i := 0; i < nLabel; i++ {
