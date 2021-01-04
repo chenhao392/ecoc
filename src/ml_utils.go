@@ -815,6 +815,7 @@ func RankPred(Yh *mat64.Dense, thres *mat64.Dense) (rankYh *mat64.Dense, rankThr
 }
 func BinPredByAlpha(Yh *mat64.Dense, rankCut int, outBin bool) (binYh *mat64.Dense, detectNanInf bool) {
 	detectNanInf = false
+	tmpIntC := -1
 	nRow, nCol := Yh.Caps()
 	binYh = mat64.NewDense(nRow, nCol, nil)
 	for r := 0; r < nRow; r++ {
@@ -848,6 +849,7 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int, outBin bool) (binYh *mat64.Den
 				binYh.Set(r, c, 0.0)
 				if !detectNanInf {
 					detectNanInf = true
+					tmpIntC = c
 				}
 			} else if Yh.At(r, c) > thres && tick < rankCut {
 				if outBin {
@@ -862,6 +864,10 @@ func BinPredByAlpha(Yh *mat64.Dense, rankCut int, outBin bool) (binYh *mat64.Den
 			if math.IsInf(ele, 0) && !detectNanInf {
 				detectNanInf = true
 			}
+		}
+		if detectNanInf {
+			log.Print("detectNanInf in col: ", tmpIntC, ", with rankCut: ", rankCut)
+			LogColSum(Yh)
 		}
 	}
 	return binYh, detectNanInf
@@ -897,9 +903,10 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 	for j := 0; j < nCol; j++ {
 		max := 0.0
 		ele := 0.0
-		c := 0
-		//cDn := 0
-		var sortMap []kv
+		//zero thres case
+		if thresData.At(0, j) < 0.0000001 {
+			thresData.Set(0, j, 0.0000001)
+		}
 		//max ele
 		for i := 0; i < nRow; i++ {
 			if math.IsInf(thresData.At(0, j), 0) {
@@ -912,30 +919,13 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 			if ele > max {
 				max = ele
 			}
-			if ele < 1.0 && ele > 0.0 {
-				//if ele < 1.0 {
-				sortMap = append(sortMap, kv{c, ele})
-				c += 1
-				//	cDn += 1
-			}
 		}
-		//0.75 quantile element below thres
-		sort.Slice(sortMap, func(i, j int) bool {
-			return sortMap[i].Value > sortMap[j].Value
-		})
-		//qRank := int(float64(c) * 0.75)
-		//qEle := 0.0
-		//if qRank > 0 {
-		//	qEle = sortMap[qRank].Value
-		//}
-		//nUp := float64(nRow) - float64(cDn)
-		//nDn := float64(cDn)
-		//iUp := nUp
-		//iDn := nDn
+		//all zero case
+		if max == 0.0 {
+			max = 1.0
+		}
 		//scale ele
 		for i := 0; i < nRow; i++ {
-			//idx := sortMap[i].Key
-			//ele := sortMap[i].Value
 			if math.IsInf(thresData.At(0, j), 0) {
 				ele = 0.0
 			} else if thresData.At(0, j) == 1.0 || max < 1.0 {
@@ -946,21 +936,9 @@ func SoftThresScale(tsYhat *mat64.Dense, thresData *mat64.Dense) (tsYhat2 *mat64
 			//recale
 			//(b-a)(ele-min)/(max-min)+a
 			if ele >= 1.0 {
-				//ele = (iUp - 1.0) / (nUp - 1)
-				//ele = 0.5*ele + 0.5
-				ele = 0.5*ele/max + 0.5
-				//iUp -= 1.0
-
-				//} else if ele > qEle {
-				//	ele = 0.5 * (ele - qEle) / (1.0 - qEle)
-				//ele = 0.0
+				ele = 0.5*(ele-1.0)/(max-1.0) + 0.5
 			} else {
-				//ele = (iDn - 1.0) / (nDn - 1)
-				ele = 0.5 * ele / max
-				//iDn -= 1.0
-				//ele = 0.0
-				//} else {
-				//	ele = 0.0
+				ele = 0.5 * ele
 			}
 
 			tsYhat2.Set(i, j, ele)
@@ -1249,7 +1227,7 @@ func Report(tsYdata *mat64.Dense, tsYhat *mat64.Dense, thresData *mat64.Dense, r
 	optScore = CostSensitiveMicroAupr(tsYdata, tsYhat)
 	//optScore = math.Sqrt(agMicroF1 * microAupr)
 	if detectNanInf {
-		fmt.Println("NanInf found", accuracy, microF1, microAupr, macroAupr, agMicroF1)
+		log.Print("NanInf found, mask these score to zero: ", accuracy, microF1, microAupr, macroAupr, agMicroF1)
 		tmp := make([]float64, nLabel)
 		return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, tmp
 	}

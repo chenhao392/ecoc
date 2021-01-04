@@ -50,15 +50,7 @@ func PerLabelScaleSet(YhSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dens
 	for j := 0; j < len(cBestArr); j++ {
 		cBest := cBestArr[j]
 		//plattABset index is for all labels only, not all Cs
-		//YhSet[cBest], _ = QuantileNorm(YhSet[cBest], mat64.NewDense(0, 0, nil), false)
-		log.Print("platt parameters:", cBest, plattABset[j].At(0, j), plattABset[j].At(1, j))
-		LogColSum(YhSet[cBest])
 		tsYhatTmp := PlattScaleSet(YhSet[cBest], plattABset[j])
-		LogColSum(tsYhatTmp)
-		tsYhatTmp, _ = QuantileNorm(tsYhatTmp, mat64.NewDense(0, 0, nil), false)
-		//tsYhatTmp, _ := QuantileNorm(YhSet[cBest], mat64.NewDense(0, 0, nil), false)
-		LogColSum(tsYhatTmp)
-		//yhh := PlattScale(YhSet[cBest].ColView(j), plattAB[j].At(0, j), plattAB[j].At(1, j))
 		for i := 0; i < nRow; i++ {
 			Yhh.Set(i, j, tsYhatTmp.At(i, j))
 		}

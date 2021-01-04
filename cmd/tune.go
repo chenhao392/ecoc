@@ -164,6 +164,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 				testFold[f].X = tsXdataTmp
 				testFold[f].Y = tsYdataTmp
 			}
+			trXdata, trYdata = src.MLSMOTE(trXdata, trYdata, 5, mlsRatio, randValues)
 		}
 		//trainFold, testFold, tsXdata = src.ConsistencyScale(trainFold, testFold, tsXdata)
 		log.Print("testing and nested training ecoc matrix after propagation generated.")

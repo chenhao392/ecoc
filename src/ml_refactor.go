@@ -103,7 +103,6 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 
 func single_AccumTsYdata(fBetaThres float64, isAutoBeta bool, globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYhat *mat64.Dense, iFold int, c int, colSum *mat64.Vector, tsX *mat64.Dense, indAccum []int, YhRawSet *map[int]*mat64.Dense, YhPlattSet *map[int]*mat64.Dense, YhPlattSetCalibrated *map[int]*mat64.Dense, yPlattSet *map[int]*mat64.Dense, iFoldMarker *map[int]*mat64.Dense, yPredSet *map[int]*mat64.Dense, xSet *map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
 	defer wg.Done()
-	//rawTsYhat, _ = QuantileNorm(rawTsYhat, mat64.NewDense(0, 0, nil), false)
 	tsYhat := mat64.DenseCopyOf(rawTsYhat)
 	nColGlobal := colSum.Len()
 	_, nColFold := tsYfold.Caps()
@@ -147,9 +146,7 @@ func single_AccumTsYdata(fBetaThres float64, isAutoBeta bool, globalBeta *mat64.
 		}
 	}
 	mutex.Unlock()
-
 	tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
-	tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
 	rawBeta := FscoreBeta(tsYfold, tsYhat, fBetaThres, isAutoBeta)
 	rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
 	tsYhat, _ = SoftThresScale(tsYhat, rawThres)
@@ -327,8 +324,6 @@ func ancillaryByHyperParameterSet(cBestArr []int, plattRobustMeasure map[int]*ma
 		}
 		//platt scale for testing
 		YhPlattScaleTmp, plattABtmp, _ = Platt(YhRawSet[cBest], yPlattSet[cBest], YhRawSet[cBest], minMSElamda)
-		YhPlattScaleTmp, _ = QuantileNorm(YhPlattScaleTmp, mat64.NewDense(0, 0, nil), false)
-		//YhPlattScaleTmp, _ = QuantileNorm(YhRawSet[cBest], mat64.NewDense(0, 0, nil), false)
 		//betaValue and thres
 		betaValueTmp := mat64.NewDense(1, nLabel, nil)
 		betaValueKnnTmp := mat64.NewDense(1, nLabel, nil)
@@ -487,13 +482,9 @@ func TuneAndPredict(nFold int, folds map[int][]int, randValues []float64, fBetaT
 	if isPerLabel {
 		//platt and quantile
 		tsYhat = PerLabelScaleSet(YhSet, plattABset, cBest)
-		LogColSum(tsYhat)
 		tsYhat, thres = PerLabelSoftThresScale(tsYhat, thresSet)
-		LogColSum(tsYhat)
 	} else {
 		tsYhat = PlattScaleSet(YhSet[0], plattABset[0])
-		//tsYhat, _ = QuantileNorm(YhSet[0], mat64.NewDense(0, 0, nil), false)
-		tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
 		tsYhat, thres = SoftThresScale(tsYhat, thresSet[0])
 	}
 	//knn calibration
