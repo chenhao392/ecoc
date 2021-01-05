@@ -153,7 +153,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccumCV)
 		}
-		trainFold, testFold, tsXdata, indAccum = src.ConsistencyIndAccum(trainFold, testFold, tsXdata, indAccum)
+		trainFold, testFold, trXdata, tsXdata, indAccum = src.ConsistencyIndAccum(trainFold, testFold, trXdata, tsXdata, indAccum)
 		//MLSOTE for the folds
 		if mlsRatio > 0.0 {
 			for f := 0; f < nFold; f++ {
@@ -166,7 +166,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 			}
 			trXdata, trYdata = src.MLSMOTE(trXdata, trYdata, 5, mlsRatio, randValues)
 		}
-		//trainFold, testFold, tsXdata = src.ConsistencyScale(trainFold, testFold, tsXdata)
+		//trainFold, testFold, trXdata, tsXdata = src.ConsistencyScale(trainFold, testFold, trXdata, tsXdata)
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
 		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)

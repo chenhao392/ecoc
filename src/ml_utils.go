@@ -50,8 +50,9 @@ func (f *CvFold) SetXYinNestedTraining(idxArr []int, matX *mat64.Dense, matY *ma
 	f.IndAccum = indAccum
 }
 
-func ConsistencyIndAccum(trainFold []CvFold, testFold []CvFold, tsXdata *mat64.Dense, indAccum []int) ([]CvFold, []CvFold, *mat64.Dense, []int) {
-	//refill tsXdata
+func ConsistencyIndAccum(trainFold []CvFold, testFold []CvFold, trXdata *mat64.Dense, tsXdata *mat64.Dense, indAccum []int) ([]CvFold, []CvFold, *mat64.Dense, *mat64.Dense, []int) {
+	//refill trXdata,tsXdata
+	tmpTrXdata := RefillIndCol(trXdata, indAccum)
 	tmpTsXdata := RefillIndCol(tsXdata, indAccum)
 	//minimum indAccum for all folds
 	for f := 0; f < len(testFold); f++ {
@@ -82,66 +83,99 @@ func ConsistencyIndAccum(trainFold []CvFold, testFold []CvFold, tsXdata *mat64.D
 		testFold[f].setX(tmpTsX)
 		testFold[f].setIndAccum(indAccum)
 	}
+	trXdata = PosSelect(tmpTrXdata, colSum)
 	tsXdata = PosSelect(tmpTsXdata, colSum)
-	return trainFold, testFold, tsXdata, indAccum
+	return trainFold, testFold, trXdata, tsXdata, indAccum
 }
 
-func ConsistencyScale(trainFold []CvFold, testFold []CvFold, tsXdata *mat64.Dense) ([]CvFold, []CvFold, *mat64.Dense) {
-	nRow, nCol := tsXdata.Caps()
+func ConsistencyScale(trainFold []CvFold, testFold []CvFold, trXdata *mat64.Dense, tsXdata *mat64.Dense) ([]CvFold, []CvFold, *mat64.Dense, *mat64.Dense) {
+	//colMax, colMin
+	_, nCol := tsXdata.Caps()
 	colMax := make([]float64, nCol)
-	for i := 0; i < nRow; i++ {
-		for j := 0; j < nCol; j++ {
+	colMin := make([]float64, nCol)
+	for j := 0; j < nCol; j++ {
+		colMin[j] = 1.0
+		nRow, _ := trXdata.Caps()
+		for i := 0; i < nRow; i++ {
+			if trXdata.At(i, j) > colMax[j] {
+				colMax[j] = trXdata.At(i, j)
+			}
+			if trXdata.At(i, j) > 0.0 && trXdata.At(i, j) < colMin[j] {
+				colMin[j] = trXdata.At(i, j)
+			}
+		}
+		nRow, _ = tsXdata.Caps()
+		for i := 0; i < nRow; i++ {
 			if tsXdata.At(i, j) > colMax[j] {
 				colMax[j] = tsXdata.At(i, j)
 			}
+			if tsXdata.At(i, j) > 0.0 && tsXdata.At(i, j) < colMin[j] {
+				colMin[j] = tsXdata.At(i, j)
+			}
 		}
-	}
-	for f := 0; f < len(testFold); f++ {
-		nRow, _ := trainFold[f].X.Caps()
-		for i := 0; i < nRow; i++ {
-			for j := 0; j < nCol; j++ {
+		for f := 0; f < len(testFold); f++ {
+			nRow, _ := trainFold[f].X.Caps()
+			for i := 0; i < nRow; i++ {
 				if trainFold[f].X.At(i, j) > colMax[j] {
 					colMax[j] = trainFold[f].X.At(i, j)
 				}
+				if trainFold[f].X.At(i, j) > 0.0 && trainFold[f].X.At(i, j) < colMin[j] {
+					colMin[j] = trainFold[f].X.At(i, j)
+				}
 			}
-		}
-		nRow, _ = testFold[f].X.Caps()
-		for i := 0; i < nRow; i++ {
-			for j := 0; j < nCol; j++ {
+			nRow, _ = testFold[f].X.Caps()
+			for i := 0; i < nRow; i++ {
 				if testFold[f].X.At(i, j) > colMax[j] {
 					colMax[j] = testFold[f].X.At(i, j)
+				}
+				if testFold[f].X.At(i, j) > 0.0 && testFold[f].X.At(i, j) < colMin[j] {
+					colMin[j] = testFold[f].X.At(i, j)
 				}
 			}
 		}
 	}
 	//rescale
-	for i := 0; i < nRow; i++ {
-		for j := 0; j < nCol; j++ {
-			tsXdata.Set(i, j, tsXdata.At(i, j)/colMax[j])
+	for j := 0; j < nCol; j++ {
+		scale := colMax[j] - colMin[j]
+		if scale <= 0.0 {
+			scale = 1.0
 		}
-	}
-	for f := 0; f < len(testFold); f++ {
-		nRow, _ := trainFold[f].X.Caps()
+		nRow, _ := tsXdata.Caps()
 		for i := 0; i < nRow; i++ {
-			for j := 0; j < nCol; j++ {
-				trainFold[f].X.Set(i, j, trainFold[f].X.At(i, j)/colMax[j])
+			if tsXdata.At(i, j) >= colMin[j] {
+				tsXdata.Set(i, j, (tsXdata.At(i, j)-colMin[j])/scale)
 			}
 		}
-		nRow, _ = testFold[f].X.Caps()
+		nRow, _ = trXdata.Caps()
 		for i := 0; i < nRow; i++ {
-			for j := 0; j < nCol; j++ {
-				testFold[f].X.Set(i, j, testFold[f].X.At(i, j)/colMax[j])
+			if trXdata.At(i, j) >= colMin[j] {
+				trXdata.Set(i, j, (trXdata.At(i, j)-colMin[j])/scale)
+			}
+		}
+		for f := 0; f < len(testFold); f++ {
+			nRow, _ = trainFold[f].X.Caps()
+			for i := 0; i < nRow; i++ {
+				if trainFold[f].X.At(i, j) >= colMin[j] {
+					trainFold[f].X.Set(i, j, (trainFold[f].X.At(i, j)-colMin[j])/scale)
+				}
+			}
+			nRow, _ = testFold[f].X.Caps()
+			for i := 0; i < nRow; i++ {
+				if testFold[f].X.At(i, j) >= colMin[j] {
+					testFold[f].X.Set(i, j, (testFold[f].X.At(i, j)-colMin[j])/scale)
+				}
 			}
 		}
 	}
 
 	str := ""
 	for j := 0; j < nCol; j++ {
-		str = str + "\t" + fmt.Sprintf("%.12f", colMax[j])
+		str = str + "\t" + fmt.Sprintf("%g", colMax[j])
+		str = str + "/" + fmt.Sprintf("%g", colMin[j])
 	}
-	log.Print("colMax:")
+	log.Print("col Max/Min:")
 	log.Print(str)
-	return trainFold, testFold, tsXdata
+	return trainFold, testFold, trXdata, tsXdata
 }
 
 func LogColSum(data *mat64.Dense) {
@@ -645,7 +679,7 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 			sortYh = append(sortYh, kv{i, ele})
 			if ele >= 1.0 {
 				sumOne += 1
-			} else if ele == 0.0 {
+			} else if ele <= 0.0 {
 				sumZero += 1
 			}
 		}

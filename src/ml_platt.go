@@ -55,6 +55,7 @@ func PerLabelScaleSet(YhSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dens
 			Yhh.Set(i, j, tsYhatTmp.At(i, j))
 		}
 	}
+	Yhh, _ = QuantileNorm(Yhh, mat64.NewDense(0, 0, nil), false)
 	return Yhh
 }
 
