@@ -24,7 +24,7 @@ import (
 	"github.com/chenhao392/ecoc/src"
 	"github.com/spf13/cobra"
 	"log"
-	"math"
+	//"math"
 	"math/rand"
 	"os"
 	"runtime"
@@ -77,12 +77,15 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
+		objFuncIndex, _ := cmd.Flags().GetInt("o")
 		rankCut, _ := cmd.Flags().GetInt("c")
 		nKnn, _ := cmd.Flags().GetInt("k")
-		nDim, _ := cmd.Flags().GetInt("d")
-		s, _ := cmd.Flags().GetInt("s")
+		lowerDim, _ := cmd.Flags().GetInt("ld")
+		upperDim, _ := cmd.Flags().GetInt("ud")
+		nStepDim, _ := cmd.Flags().GetInt("s1")
 		lowerLamda, _ := cmd.Flags().GetFloat64("ll")
 		upperLamda, _ := cmd.Flags().GetFloat64("ul")
+		nStepLamda, _ := cmd.Flags().GetInt("s2")
 		isKnn, _ := cmd.Flags().GetBool("isCali")
 		isPerLabel, _ := cmd.Flags().GetBool("isPerLabel")
 		reg, _ := cmd.Flags().GetBool("r")
@@ -121,24 +124,14 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		}
 
 		//prepare hyperparameter grid
-		_, _, lamdaSet := src.HyperParameterSet(nLabel, lowerLamda, upperLamda, s)
+		//potential bug when cv set's dim is smaller
+		kSet, lamdaSet := src.HyperParameterSet(nLabel, lowerDim, upperDim, lowerLamda, upperLamda, nStepDim, nStepLamda)
+		nK := len(kSet)
+		//adding linear only option if isPerLabel
 		if isPerLabel {
-			_, _, lamdaSet2 := src.HyperParameterSet(nLabel, 0.0, 0.025, 1)
+			_, lamdaSet2 := src.HyperParameterSet(nLabel, 1, 1, 0.0, 0.025, 1, 1)
 			lamdaSet = append(lamdaSet2, lamdaSet...)
 		}
-
-		//min dims, potential bug when cv set's minDims is smaller
-		minDims := int(math.Min(float64(nFea), float64(nLabel)))
-		if nDim >= minDims {
-			nDim = minDims - 1
-			log.Print("number of dimensions larger than number of labels, reduced to ", nDim, ".")
-		}
-		if nDim == 0 {
-			nDim = nLabel - 1
-			log.Print("number of dimensions set to ", nDim, ".")
-		}
-		nK := 1
-		kSet := []int{nDim}
 
 		//rands
 		rand.Seed(1)
@@ -169,9 +162,9 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		//trainFold, testFold, trXdata, tsXdata = src.ConsistencyScale(trainFold, testFold, trXdata, tsXdata)
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(objFuncIndex, nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
-		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
+		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")
 		os.Exit(0)
 
@@ -184,19 +177,22 @@ func init() {
 	tuneCmd.Flags().Float64("alpha", 0.2, "alpha value for a single label propgation\n")
 	tuneCmd.Flags().Float64("mlsRatio", 0.1, "multi-label SMOTE ratio\n")
 	tuneCmd.Flags().Int("c", 3, "top c predictions for a gene to used\nin multi-label F1 calculation")
-	tuneCmd.Flags().Int("d", 0, "number of CCA dimensions")
+	tuneCmd.Flags().Int("ld", 1, "lower bound, number of CCA dimensions")
+	tuneCmd.Flags().Int("ud", 1, "upper bound, number of CCA dimensions")
 	tuneCmd.Flags().Float64("ll", 0.025, "lower bound, lamda balancing bernoulli and gaussian potentials\n")
 	tuneCmd.Flags().Float64("ul", 0.225, "upper bound, lamda balancing bernoulli and gaussian potentials\n")
-	tuneCmd.Flags().Int("s", 8, "steps for tuning lamda\n")
+	tuneCmd.Flags().Int("s1", 4, "steps for tuning number of CCA dimensions\n")
+	tuneCmd.Flags().Int("s2", 8, "steps for tuning lamda\n")
 	tuneCmd.Flags().Bool("ec", false, "experimental label propgation alternative\n(default false)")
 	tuneCmd.Flags().Bool("isCali", false, "nearest neighbors calibration for the predictions\n(default false)")
 	tuneCmd.Flags().Bool("isPerLabel", false, "training objection as the auprs of labels/columns\n(default false)")
 	tuneCmd.Flags().Int("k", 10, "number of nearest neighbors \nfor post-prediction calibration\n")
 	tuneCmd.Flags().String("n", "data/net1.txt,data/net2.txt", "three columns network file(s)\n")
 	tuneCmd.Flags().Int("nFold", 2, "number of folds for cross validation\n")
-	tuneCmd.Flags().Bool("r", true, "regularized CCA\n(default true)")
+	tuneCmd.Flags().Bool("r", false, "regularized CCA\n(default false)")
 	tuneCmd.Flags().String("res", "result", "result folder")
 	tuneCmd.Flags().Int("t", 4, "number of threads")
+	tuneCmd.Flags().Int("o", 1, "object function choice")
 	tuneCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
 	tuneCmd.Flags().String("tsY", "data/tsMatrix.txt", "test label matrix")
 	tuneCmd.Flags().Bool("v", false, "verbose outputs")

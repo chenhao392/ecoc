@@ -343,7 +343,7 @@ func WriteNetwork(outFile string, data *mat64.Dense, idxToId map[int]string) (er
 	return err
 }
 
-func WriteOutputFiles(isVerbose bool, resFolder string, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, tsYhat *mat64.Dense, thres *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
+func WriteOutputFiles(isVerbose bool, resFolder string, trainMeasure *mat64.Dense, testMeasure *mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, tsYhat *mat64.Dense, Yhat *mat64.Dense, YhatCalibrated *mat64.Dense, Ylabel *mat64.Dense) {
 	oFile := "./" + resFolder + "/test.probMatrix.txt"
 	WriteFile(oFile, tsYhat, nil, false)
 	if isVerbose {
@@ -355,8 +355,6 @@ func WriteOutputFiles(isVerbose bool, resFolder string, trainMeasure *mat64.Dens
 		WriteFile(oFile, posLabelRls, nil, false)
 		oFile = "./" + resFolder + "/negLabelRls.txt"
 		WriteFile(oFile, negLabelRls, nil, false)
-		oFile = "./" + resFolder + "/thres.txt"
-		WriteFile(oFile, thres, nil, false)
 		oFile = "./" + resFolder + "/train.probMatrix.txt"
 		WriteFile(oFile, Yhat, nil, false)
 		oFile = "./" + resFolder + "/trainCalibrated.probMatrix.txt"

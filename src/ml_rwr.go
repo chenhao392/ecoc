@@ -447,11 +447,11 @@ func propagate(network *mat64.Dense, alpha float64, inPrior *mat64.Dense, trY *m
 	//	max = 1.0
 	//}
 	//for i := 0; i < r; i++ {
-	//	//if trY.At(i, 0) == 1.0 {
-	//	//	prior.Set(i, 0, 1.0)
-	//	//} else {
-	//	prior.Set(i, 0, prior.At(i, 0)/max)
-	//	//}
+	//	if trY.At(i, 0) == 1.0 {
+	//		prior.Set(i, 0, 1.0)
+	//	} else {
+	//		prior.Set(i, 0, prior.At(i, 0)/max)
+	//	}
 	//}
 	return prior
 }

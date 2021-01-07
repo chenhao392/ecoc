@@ -63,7 +63,7 @@ Calculate per label benchmark scores.
 			thresData.Set(0, i, 0.5)
 		}
 		detectNanInf := src.NanFilter(tsYhat)
-		accuracy, microF1, microAupr, macroAupr, agMicroAupr, _, macroAuprSet := src.Report(tsYdata, tsYhat, thresData, rankCut, true)
+		accuracy, microF1, microAupr, macroAupr, agMicroAupr, _, macroAuprSet := src.Report(1, tsYdata, tsYhat, thresData, rankCut, true)
 		if detectNanInf {
 			fmt.Println("NaN or Inf found.")
 		}

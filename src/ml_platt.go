@@ -44,16 +44,13 @@ func PerlLabelQuantileNorm(YhSet map[int]*mat64.Dense, cBestArr []int) (tsYhat *
 	return tsYhat
 }
 
-func PerLabelScaleSet(YhSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dense, cBestArr []int) (Yhh *mat64.Dense) {
+func PerLabelScaleSet(YhSet map[int]*mat64.Dense, plattAB *mat64.Dense, cBestArr []int) (Yhh *mat64.Dense) {
 	nRow, nCol := YhSet[0].Caps()
 	Yhh = mat64.NewDense(nRow, nCol, nil)
 	for j := 0; j < len(cBestArr); j++ {
 		cBest := cBestArr[j]
-		//plattABset index is for all labels only, not all Cs
-		tsYhatTmp := PlattScaleSet(YhSet[cBest], plattABset[j])
-		for i := 0; i < nRow; i++ {
-			Yhh.Set(i, j, tsYhatTmp.At(i, j))
-		}
+		yhh := PlattScale(YhSet[cBest].ColView(j), plattAB.At(0, j), plattAB.At(1, j))
+		Yhh.SetCol(j, yhh)
 	}
 	Yhh, _ = QuantileNorm(Yhh, mat64.NewDense(0, 0, nil), false)
 	return Yhh
@@ -727,9 +724,37 @@ func YhPlattSetUpdate(iFold int, c int, YhPlattSetCalibrated map[int]*mat64.Dens
 		}
 	}
 }
-
-func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Dense, X *mat64.Dense, iFoldmat *mat64.Dense) (yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, xTest *mat64.Dense, tsYhat *mat64.Dense, tsYfold *mat64.Dense) {
+func SubSetYs(iFold int, Yh *mat64.Dense, Y *mat64.Dense, iFoldmat *mat64.Dense) (YhTrain *mat64.Dense, YTrain *mat64.Dense, indMinus map[int]int) {
 	nRow := 0
+	indMinus = make(map[int]int)
+	nRowTotal, nCol := Y.Caps()
+	for i := 0; i < nRowTotal; i++ {
+		if iFoldmat.At(i, 0) != float64(iFold) {
+			nRow += 1
+		}
+	}
+	YhTrain = mat64.NewDense(nRow, nCol, nil)
+	YTrain = mat64.NewDense(nRow, nCol, nil)
+
+	nRow = 0
+	for i := 0; i < nRowTotal; i++ {
+		if iFoldmat.At(i, 0) != float64(iFold) {
+			for j := 0; j < nCol; j++ {
+				YhTrain.Set(nRow, j, Yh.At(i, j))
+				YTrain.Set(nRow, j, Y.At(i, j))
+				if Y.At(i, j) == -1.0 {
+					indMinus[j] = j
+				}
+			}
+			nRow += 1
+		}
+	}
+	return YhTrain, YTrain, indMinus
+}
+
+func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Dense, X *mat64.Dense, iFoldmat *mat64.Dense) (yPlattTrain *mat64.Dense, yPredTrain *mat64.Dense, xTrain *mat64.Dense, xTest *mat64.Dense, tsYhat *mat64.Dense, tsYfold *mat64.Dense, indMinus map[int]int) {
+	nRow := 0
+	indMinus = make(map[int]int)
 	nRowTotal, nCol := Y.Caps()
 	_, nColX := X.Caps()
 	for i := 0; i < nRowTotal; i++ {
@@ -760,6 +785,9 @@ func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Den
 			for j := 0; j < nCol; j++ {
 				tsYhat.Set(nRowTest, j, Yh.At(i, j))
 				tsYfold.Set(nRowTest, j, Y.At(i, j))
+				if Y.At(i, j) == -1.0 {
+					indMinus[j] = j
+				}
 			}
 			for j := 0; j < nColX; j++ {
 				xTest.Set(nRowTest, j, X.At(i, j))
@@ -769,7 +797,7 @@ func SubSetTrain(iFold int, Y *mat64.Dense, Yh *mat64.Dense, predBinY *mat64.Den
 	}
 	//from  yPlattSet[c], yPredSet[c], xSet[c],  xSet[c] ,YhPlattSet[c], yPlattSet[c]
 	//from  Y(train)    , predBinY   , X(train), X(test) ,Yh,            Y(test)
-	return yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold
+	return yPlattTrain, yPredTrain, xTrain, xTest, tsYhat, tsYfold, indMinus
 }
 func PerlLabelMultiLabelRecalibrate(YhSet map[int]*mat64.Dense, cBestArr []int, kNN int, trainMeasure *mat64.Dense, xTest *mat64.Dense, yPlattSet map[int]*mat64.Dense, yPredSet map[int]*mat64.Dense, xSet map[int]*mat64.Dense, plattABset map[int]*mat64.Dense, thresSet map[int]*mat64.Dense, posLabelRls *mat64.Dense, negLabelRls *mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) (tsYhatCal *mat64.Dense) {
 

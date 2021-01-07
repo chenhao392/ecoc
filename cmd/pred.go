@@ -78,6 +78,7 @@ var predCmd = &cobra.Command{
 		inNetworkFiles, _ := cmd.Flags().GetString("n")
 		resFolder, _ := cmd.Flags().GetString("res")
 		threads, _ := cmd.Flags().GetInt("t")
+		objFuncIndex, _ := cmd.Flags().GetInt("o")
 		rankCut, _ := cmd.Flags().GetInt("c")
 		nKnn, _ := cmd.Flags().GetInt("k")
 		nDim, _ := cmd.Flags().GetInt("d")
@@ -116,16 +117,15 @@ var predCmd = &cobra.Command{
 			os.Exit(0)
 		}
 
-		//prepare hyperparameter grid
-		_, _, lamdaSet := src.HyperParameterSet(nLabel, lamda, lamda, 1)
 		//min dims, potential bug when cv set's minDims is smaller
 		minDims := int(math.Min(float64(nFea), float64(nLabel)))
 		if nDim >= minDims {
 			nDim = minDims - 1
 			log.Print("number of dimensions larger than number of labels, reduced to ", nDim, ".")
 		}
-		nK := 1
-		kSet := []int{nDim}
+		//prepare hyperparameter grid
+		kSet, lamdaSet := src.HyperParameterSet(nLabel, nDim, nDim, lamda, lamda, 1, 1)
+		nK := len(kSet)
 
 		//rands
 		rand.Seed(1)
@@ -145,9 +145,9 @@ var predCmd = &cobra.Command{
 
 		log.Print("testing and nested training ecoc matrix after propagation generated.")
 		//tune and predict
-		trainMeasure, testMeasure, tsYhat, thres, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
+		trainMeasure, testMeasure, tsYhat, Yhat, YhatCalibrated, Ylabel := src.TuneAndPredict(objFuncIndex, nFold, folds, randValues, fBetaThres, isAutoBeta, nK, nKnn, isPerLabel, isKnn, kSet, lamdaSet, reg, rankCut, trainFold, testFold, indAccum, tsXdata, tsYdata, trXdata, trYdata, posLabelRls, negLabelRls, &wg, &mutex)
 		//result file
-		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, thres, Yhat, YhatCalibrated, Ylabel)
+		src.WriteOutputFiles(isVerbose, resFolder, trainMeasure, testMeasure, posLabelRls, negLabelRls, tsYhat, Yhat, YhatCalibrated, Ylabel)
 		log.Print("Program finished.")
 		os.Exit(0)
 	},
@@ -169,6 +169,7 @@ func init() {
 	predCmd.Flags().Bool("r", false, "experimental regularized CCA\n(default false)")
 	predCmd.Flags().String("res", "result", "result folder")
 	predCmd.Flags().Int("t", 4, "number of threads")
+	predCmd.Flags().Int("o", 1, "object function choice")
 	predCmd.Flags().String("trY", "data/trMatrix.txt", "train label matrix")
 	predCmd.Flags().String("tsY", "data/tsMatrix.txt", "test label matrix")
 	predCmd.Flags().Bool("v", false, "verbose outputs")
