@@ -183,9 +183,9 @@ func LogColSum(data *mat64.Dense) {
 	sum := make([]float64, nCol)
 	for i := 0; i < nRow; i++ {
 		for j := 0; j < nCol; j++ {
-			if data.At(i, j) > 0.0 {
-				sum[j] += data.At(i, j)
-			}
+			//if data.At(i, j) > 0.0 {
+			sum[j] += data.At(i, j)
+			//}
 		}
 	}
 	str := ""
@@ -214,7 +214,7 @@ func RatioPosPerLabel(tmpTsYhat *mat64.Dense, tsYdata *mat64.Dense) (idxArr []in
 		sortMap = append(sortMap, kv{i, nPredPos[i] / nPos[i]})
 	}
 	sort.Slice(sortMap, func(i, j int) bool {
-		return sortMap[i].Value > sortMap[j].Value
+		return sortMap[i].Value < sortMap[j].Value
 	})
 	for i := 0; i < nCol; i++ {
 		idxArr[i] = sortMap[i].Key
@@ -659,15 +659,12 @@ func CostSeneitiveAupr(Y *mat64.Vector, Yh *mat64.Vector, C *mat64.Vector) (aupr
 	}
 	return aupr
 }
-func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64, pAupr float64, maxFscore float64, optThres float64) {
-	type kv struct {
-		Key   int
-		Value float64
-	}
+func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (float64, float64, float64, float64) {
+	//tmp fix for beta log scale
+	beta = math.Pow(10, beta)
 	n := Y.Len()
 	mapY := make(map[int]int)
-	sumZero := 0
-	sumOne := 0
+	sumZero, sumOne := 0, 0
 	var sortYh []kv
 	for i := 0; i < n; i++ {
 		if Y.At(i, 0) == 1.0 {
@@ -688,7 +685,7 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 		}
 	}
 
-	//the all zero/one slice won't be sorted by default, resulting aartifact Aupr that can be large
+	//the all zero/one slice won't be sorted by default, resulting artifact Aupr that can be large
 	nCaseThres := int(float64(n) * 0.99)
 	if sumOne > nCaseThres || sumZero > nCaseThres {
 		return 0.0, 0.0, 0.0, 1.0
@@ -697,22 +694,11 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 		return sortYh[i].Value > sortYh[j].Value
 	})
 
-	all := 0.0
-	p := 0.0
-	tp := 0.0
-	fp := 0.0
-	tn := 0.0
-	pr := 0.0
-	re := 0.0
-	beta1 := beta
-	beta2 := 1.0 / beta
-	invPr := 0.0
-	invRe := 0.0
-	fscore := 0.0
-	invFscore := 0.0
-	maxFscore = 0.0
-	optThres = 1.0
-	//tprAtMax := 0.0
+	all, p, tp, fp, tn := 0.0, 0.0, 0.0, 0.0, 0.0
+	pr, re, invPr, invRe := 0.0, 0.0, 0.0, 0.0
+	beta1, beta2 := beta, 1.0/beta
+	fscore, invFscore, maxFscore, optThres := 0.0, 0.0, 0.0, 1.0
+	prAtMax := 0.0
 	isThresDetermined := false
 	total := float64(len(mapY))
 	invTotal := float64(n - len(mapY))
@@ -763,12 +749,12 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 				maxFscore = agFscore
 				optThres = kv.Value
 				thresP = len(prData)
+				prAtMax = pr
 			}
 		}
-
 	}
-	aupr = 0.0
-	pAupr = 0.0
+	aupr := 0.0
+	pAupr := 0.0
 	for i := 2; i < len(prData)-1; i += 2 {
 		aupr += (prData[i] + prData[i-2]) * (prData[i+1] - prData[i-1])
 	}
@@ -789,9 +775,9 @@ func ComputeAupr(Y *mat64.Vector, Yh *mat64.Vector, beta float64) (aupr float64,
 	}
 
 	if aupr < float64(len(mapY))/float64(n) {
-		return aupr, pAupr, maxFscore, 1.0
+		return aupr, prAtMax, maxFscore, 1.0
 	}
-	return aupr, pAupr, maxFscore, optThres
+	return aupr, prAtMax, maxFscore, optThres
 }
 
 func Flat(Y *mat64.Dense) (vec *mat64.Vector) {
@@ -1350,47 +1336,49 @@ func EleCopy(data *mat64.Dense) (data2 *mat64.Dense) {
 	return data2
 }
 
-func TprBeta(tsYvec *mat64.Vector, tsYhatVec *mat64.Vector, tprThres float64) (beta float64) {
-	tprMax := 0.0
-	betaMax := 0.0
-	betaFinal := 0.0
-	for beta := 0.1; beta < 2; beta += 0.1 {
-		_, _, tpr, _ := ComputeAupr(tsYvec, tsYhatVec, beta)
-		//best possible tpr
-		if tpr > tprMax {
-			tprMax = tpr
+//rate as prAtMax
+func MaxBetaByRate(tsYvec *mat64.Vector, tsYhatVec *mat64.Vector, rateThres float64) (betaMax float64) {
+	rateOptimal := 0.0
+	betaOptimal := 0.0
+	betaMax = 0.0
+	for beta := -2.0; beta <= 2.0; beta += 0.1 {
+		_, rate, _, _ := ComputeAupr(tsYvec, tsYhatVec, beta)
+		//best possible rate and corresponding beta
+		if rate > rateOptimal {
+			rateOptimal = rate
+			betaOptimal = beta
+		}
+
+		if rate > rateThres && beta > betaMax {
 			betaMax = beta
 		}
-
-		if tpr > tprThres && beta > betaFinal {
-			betaFinal = beta
-		}
 	}
-	if betaFinal > 0.0 {
-		return betaFinal
-	} else {
-		return betaMax
+	if rateOptimal < rateThres {
+		betaMax = betaOptimal
 	}
+	return betaMax
 }
 
-func betaAndThresByRate(rate float64, tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense, thresData *mat64.Dense, macroAupr []float64) {
+func betaAndThresByRate(rate float64, tsYdata *mat64.Dense, tsYhat *mat64.Dense) (beta *mat64.Dense, thresData *mat64.Dense) {
 	_, nCol := tsYdata.Caps()
 	thresData = mat64.NewDense(1, nCol, nil)
-	macroAupr = []float64{}
+	//macroAupr = []float64{}
 	beta = mat64.NewDense(1, nCol, nil)
 	for i := 0; i < nCol; i++ {
+		//tmpBeta := MaxBetaByRate(tsYdata.ColView(i), tsYhat.ColView(i), rate)
 		_, pAupr, _, _ := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), 1)
-		macroAupr = append(macroAupr, pAupr)
-		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), pAupr*rate)
-		beta.Set(0, i, pAupr*rate)
+		//macroAupr = append(macroAupr, pAupr)
+		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), (pAupr-0.5)*rate)
+		beta.Set(0, i, (pAupr-0.5)*rate)
 		thresData.Set(0, i, optThres)
 	}
-	return beta, thresData, macroAupr
+	return beta, thresData
 }
 
 func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense, objFuncIndex int, fBetaThres float64, isAutoBeta bool) (beta *mat64.Dense) {
 	//init vars
 	rateSet := []float64{4.0, 3.8, 3.6, 3.4, 3.2, 3.0, 2.8, 2.6, 2.4, 2.2, 1.8, 1.6, 1.4, 1.2, 1.0, 0.8, 0.6, 0.4, 0.2}
+	//rateSet := []float64{1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1}
 	_, nCol := tsYdata.Caps()
 	rankCut := 3
 	if !isAutoBeta {
@@ -1402,12 +1390,12 @@ func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense, objFuncIndex int, fBe
 
 	//init aScore with midway aRate and aupr -baseline
 	aRate, bRate, bScore, tmpScore := 1.0, 0.0, 0.0, 0.0
-	beta, thresData, macroAupr := betaAndThresByRate(aRate, tsYdata, tsYhat)
+	beta, thresData := betaAndThresByRate(aRate, tsYdata, tsYhat)
 	tmpTsYhat, _ := SoftThresScale(tsYhat, thresData)
 	aScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
 	//init bRate and bScore with grid search for sub optimal beta
 	for j := 0; j < len(rateSet); j++ {
-		tmpBeta, tmpThresData, _ := betaAndThresByRate(rateSet[j], tsYdata, tsYhat)
+		tmpBeta, tmpThresData := betaAndThresByRate(rateSet[j], tsYdata, tsYhat)
 		tmpTsYhat, _ := SoftThresScale(tsYhat, tmpThresData)
 		bScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
 		if bScore > tmpScore {
@@ -1429,89 +1417,87 @@ func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense, objFuncIndex int, fBe
 	for notConverged || itr <= maxItr {
 		//test rate, larger /smaller score rates
 		tRate := (lRate + sRate) / 2.0
-		//score for test rate
 		itr += 1
-		_, tmpThresData, _ := betaAndThresByRate(tRate, tsYdata, tsYhat)
+		tmpBeta, tmpThresData := betaAndThresByRate(tRate, tsYdata, tsYhat)
 		tmpTsYhat, _ := SoftThresScale(tsYhat, tmpThresData)
+		//score for test rate
 		tScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
 		if tScore-sScore >= 0.001 {
 			if tScore > lScore {
 				sScore, sRate = lScore, lRate
 				lScore, lRate = tScore, tRate
+				//update beta with current lRate
+				for i := 0; i < nCol; i++ {
+					beta.Set(0, i, tmpBeta.At(0, i))
+				}
 
 			} else {
 				sScore, sRate = tScore, tRate
-			}
-			//update beta with current lRate
-			for i := 0; i < nCol; i++ {
-				beta.Set(0, i, lRate*macroAupr[i])
 			}
 		} else {
 			notConverged = false
 		}
 	}
 	//thres and score using best beta
-	/*
+	for i := 0; i < nCol; i++ {
+		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta.At(0, i))
+		thresData.Set(0, i, optThres)
+	}
+	tmpTsYhat, _ = SoftThresScale(tsYhat, thresData)
+	score := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
+	optOrder := RatioPosPerLabel(tmpTsYhat, tsYdata)
+	//per label converge
+	itr, maxItr, notConverged = 0, 50, true
+	for notConverged && itr <= maxItr {
+		itr += 1
+		notConverged = false
 		for i := 0; i < nCol; i++ {
-			_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta.At(0, i))
-			thresData.Set(0, i, optThres)
-		}
-		tmpTsYhat, _ = SoftThresScale(tsYhat, thresData)
-		score := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
-		optOrder := RatioPosPerLabel(tmpTsYhat, tsYdata)
-		//per label converge
-		itr, maxItr, notConverged = 0, 10, true
-		for notConverged && itr <= maxItr {
-			itr += 1
-			notConverged = false
-			for i := 0; i < nCol; i++ {
-				idx := optOrder[i]
-				tmpThresData := mat64.DenseCopyOf(thresData)
-				betaSet := []float64{beta.At(0, idx) * 0.9, beta.At(0, idx) * 1.1}
-				for j := 0; j < len(betaSet); j++ {
-					_, _, _, optThres := ComputeAupr(tsYdata.ColView(idx), tsYhat.ColView(idx), betaSet[j])
-					tmpThresData.Set(0, idx, optThres)
-					//tmpScore
-					tmpTsYhat, _ := SoftThresScale(tsYhat, tmpThresData)
-					tmpScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
-					diff := tmpScore - score
-					if diff > 0 {
-						score = tmpScore
-						beta.Set(0, idx, betaSet[j])
-						thresData = tmpThresData
-						notConverged = true
-					}
+			idx := optOrder[i]
+			tmpThresData := mat64.DenseCopyOf(thresData)
+			betaSet := []float64{beta.At(0, idx) - 0.2, beta.At(0, idx) - 0.1, beta.At(0, idx) + 0.1, beta.At(0, idx) + 0.2}
+			for j := 0; j < len(betaSet); j++ {
+				_, _, _, optThres := ComputeAupr(tsYdata.ColView(idx), tsYhat.ColView(idx), betaSet[j])
+				tmpThresData.Set(0, idx, optThres)
+				//tmpScore
+				tmpTsYhat, _ := SoftThresScale(tsYhat, tmpThresData)
+				tmpScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
+				diff := tmpScore - score
+				if diff > 0 {
+					score = tmpScore
+					beta.Set(0, idx, betaSet[j])
+					thresData = tmpThresData
+					notConverged = true
 				}
 			}
-			//refresh optOrder
-			tmpTsYhat, _ := SoftThresScale(tsYhat, thresData)
-			optOrder = RatioPosPerLabel(tmpTsYhat, tsYdata)
 		}
-	*/
+		//refresh optOrder
+		tmpTsYhat, _ := SoftThresScale(tsYhat, thresData)
+		optOrder = RatioPosPerLabel(tmpTsYhat, tsYdata)
+	}
+
 	return beta
 }
 
 func FscoreWrapper(tsYdata *mat64.Dense, tmpTsYhat *mat64.Dense, rankCut int, objFuncIndex int) (score float64) {
 	switch objFuncIndex {
 	case 1:
-		score = CostSensitiveMicroAupr(tsYdata, tmpTsYhat)
-	case 2:
-		score = 0 - CrossEntropy(tsYdata, tmpTsYhat)
-	case 3:
-		score = 0 - CostSensitiveLoss(tsYdata, tmpTsYhat)
-	case 4:
-		score = MicroAupr(tsYdata, tmpTsYhat)
-	case 5:
-		score = CostSensitiveMicroAupr(tsYdata, tmpTsYhat)
-	case 6:
-		score = MicroF1AG(tsYdata, tmpTsYhat, rankCut)
-	case 7:
 		microF1ag := MicroF1AG(tsYdata, tmpTsYhat, rankCut)
 		microAupr := MicroAupr(tsYdata, tmpTsYhat)
 		score = math.Sqrt(microAupr * microF1ag)
-	default:
+	case 2:
+		score = MicroAupr(tsYdata, tmpTsYhat)
+	case 3:
+		score = MicroF1AG(tsYdata, tmpTsYhat, rankCut)
+	case 4:
 		score = CostSensitiveMicroAupr(tsYdata, tmpTsYhat)
-
+	case 5:
+		score = 0 - CrossEntropy(tsYdata, tmpTsYhat)
+	case 6:
+		score = 0 - CostSensitiveLoss(tsYdata, tmpTsYhat)
+	default:
+		microF1ag := MicroF1AG(tsYdata, tmpTsYhat, rankCut)
+		microAupr := MicroAupr(tsYdata, tmpTsYhat)
+		score = math.Sqrt(microAupr * microF1ag)
 	}
 	return score
 }

@@ -24,7 +24,7 @@ import (
 	"github.com/chenhao392/ecoc/src"
 	"github.com/spf13/cobra"
 	"log"
-	//"math"
+	"math"
 	"math/rand"
 	"os"
 	"runtime"
@@ -97,6 +97,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		fBetaThres := 1.0
 		isAutoBeta := true
 
+		fBetaThres = math.log10(fBetaThres)
 		//result dir and logging
 		logFile := src.Init(resFolder)
 		defer logFile.Close()

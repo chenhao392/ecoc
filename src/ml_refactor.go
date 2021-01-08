@@ -108,11 +108,7 @@ func single_AccumTsYdata(objFuncIndex int, fBetaThres float64, isAutoBeta bool, 
 	_, nColFold := tsYfold.Caps()
 	minMSElamda := make([]float64, nColFold)
 	minMSE := make([]float64, nColFold)
-	_, isDefinedMSE := plattRobustMeasure[c]
-	mutex.Lock()
-	if !isDefinedMSE {
-		plattRobustMeasure[c] = mat64.NewDense(len(plattRobustLamda), nColGlobal, nil)
-	}
+	tmpPlattRobustMeasure := mat64.NewDense(len(plattRobustLamda), nColGlobal, nil)
 	for p := 0; p < len(plattRobustLamda); p++ {
 		tmpLamda := make([]float64, 0)
 		//lamda per fold label
@@ -131,7 +127,8 @@ func single_AccumTsYdata(objFuncIndex int, fBetaThres float64, isAutoBeta bool, 
 			}
 			//in case first label missing, start updating when qF is updated
 			if qF >= 0 {
-				plattRobustMeasure[c].Set(p, qG, plattRobustMeasure[c].At(p, qG)+mseArr[qF])
+				//plattRobustMeasure[c].Set(p, qG, plattRobustMeasure[c].At(p, qG)+mseArr[qF])
+				tmpPlattRobustMeasure.Set(p, qG, tmpPlattRobustMeasure.At(p, qG)+mseArr[qF])
 				if p == 0 {
 					minMSE[qF] = mseArr[qF]
 					minMSElamda[qF] = plattRobustLamda[p]
@@ -145,42 +142,26 @@ func single_AccumTsYdata(objFuncIndex int, fBetaThres float64, isAutoBeta bool, 
 			qG++
 		}
 	}
-	mutex.Unlock()
+	//data processing, this data
 	tsYhat, _, _ = Platt(tsYhat, tsYfold, tsYhat, minMSElamda)
 	tsYhat, _ = QuantileNorm(tsYhat, mat64.NewDense(0, 0, nil), false)
 	rawBeta := FscoreBeta(tsYfold, tsYhat, objFuncIndex, fBetaThres, isAutoBeta)
 	rawThres := FscoreThres(tsYfold, tsYhat, rawBeta)
 	tsYhat, _ = SoftThresScale(tsYhat, rawThres)
-	mutex.Lock()
-	//beta for thres
-	qF := -1
-	qG := 0
-	for qG < nColGlobal {
-		//qF inc if qG label exist in fold
-		if colSum.At(qG, 0) == 1.0 {
-			qF++
-		}
-		//in case first label missing, start updating when qF is updated
-		if qF >= 0 {
-			globalBeta.Set(c, qG, globalBeta.At(c, qG)+rawBeta.At(0, qF))
-			globalBeta.Set(c, qG+nColGlobal, globalBeta.At(c, qG+nColGlobal)+1.0)
-		}
-		qG++
-	}
+	//data processing, matching global data structure
 	//accum to add information for KNN calibaration
-	//YhRawSet, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet = AccumTsYdata(iFold, c, colSum, tsYhat, rawTsYhat, tsYfold, tsX, indAccum, YhRawSet, YhPlattSet, YhPlattSetCalibrated, yPlattSet, iFoldMarker, yPredSet, xSet, rawThres)
 	nRow, _ := tsYhat.Caps()
 	tsYh2 := mat64.NewDense(nRow, nColGlobal, nil)
 	rawTsYh2 := mat64.NewDense(nRow, nColGlobal, nil)
 	tsYhCalib2 := mat64.NewDense(nRow, nColGlobal, nil)
 	tsY2 := mat64.NewDense(nRow, nColGlobal, nil)
 	predY2 := mat64.NewDense(nRow, nColGlobal, nil)
-	//fold marker
+	//data processing, fold marker
 	iFoldmat2 := mat64.NewDense(nRow, 1, nil)
 	for i := 0; i < nRow; i++ {
 		iFoldmat2.Set(i, 0, float64(iFold))
 	}
-	//tsYh, rawTsYh, tsY, and predY
+	//data processing, tsYh, rawTsYh, tsY, and predY
 	tC := 0
 	for j := 0; j < nColGlobal; j++ {
 		if colSum.At(j, 0) == 1.0 {
@@ -201,6 +182,28 @@ func single_AccumTsYdata(objFuncIndex int, fBetaThres float64, isAutoBeta bool, 
 				predY2.Set(i, j, -1.0)
 			}
 		}
+	}
+
+	//lock and update
+	mutex.Lock()
+	_, isDefinedMSE := plattRobustMeasure[c]
+	if !isDefinedMSE {
+		plattRobustMeasure[c] = tmpPlattRobustMeasure
+	}
+	//beta for thres
+	qF := -1
+	qG := 0
+	for qG < nColGlobal {
+		//qF inc if qG label exist in fold
+		if colSum.At(qG, 0) == 1.0 {
+			qF++
+		}
+		//in case first label missing, start updating when qF is updated
+		if qF >= 0 {
+			globalBeta.Set(c, qG, globalBeta.At(c, qG)+rawBeta.At(0, qF))
+			globalBeta.Set(c, qG+nColGlobal, globalBeta.At(c, qG+nColGlobal)+1.0)
+		}
+		qG++
 	}
 	//is the matrix defined previously?
 	_, isYh := (*YhPlattSet)[c]
@@ -380,7 +383,7 @@ func ancillaryByHyperParameterSet(objFuncIndex int, cBestArr []int, plattRobustM
 	}
 
 	//log beta
-	log.Print("choose these beta values per label for F-thresholding.")
+	log.Print("choose these log10(beta) values per label for F-thresholding.")
 	str := ""
 	for p := 0; p < nLabel; p++ {
 		s := fmt.Sprintf("%.3f", betaValue.At(0, p))
@@ -395,7 +398,7 @@ func ancillaryByHyperParameterSet(objFuncIndex int, cBestArr []int, plattRobustM
 	}
 	log.Print(str)
 	if isKnn {
-		log.Print("choose these after calibration beta values per label for F-thresholding.")
+		log.Print("choose these after calibration log10(beta) values per label for F-thresholding.")
 		str = ""
 		for p := 0; p < nLabel; p++ {
 			s := fmt.Sprintf("%.3f", betaValueKnn.At(0, p))
@@ -460,7 +463,6 @@ func TuneAndPredict(objFuncIndex int, nFold int, folds map[int][]int, randValues
 				c += 1
 			}
 		}
-		wg.Wait()
 		log.Print("step 5: recalibration data obtained.")
 	}
 	//update all meassures before or after KNN calibration
@@ -606,7 +608,7 @@ func PerLabelBetaEst(objFuncIndex int, cBestArr []int, plattRobustMeasure map[in
 	}
 	//ave beta
 	for j := 0; j < nLabel; j++ {
-		if betaValue.At(0, j) > 0.0 {
+		if betaValueCount.At(0, j) > 0.0 {
 			betaValue.Set(0, j, betaValue.At(0, j)/betaValueCount.At(0, j))
 		}
 	}
