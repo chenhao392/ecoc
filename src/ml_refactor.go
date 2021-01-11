@@ -7,7 +7,61 @@ import (
 	"sync"
 )
 
-func ReadNetworkPropagate(trRowName []string, tsRowName []string, trYdata *mat64.Dense, inNetworkFile []string, transLabels *mat64.Dense, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (tsXdata *mat64.Dense, trXdata *mat64.Dense, indAccum []int) {
+func ReadAndNormNetworks(inNetworkFile []string, modeIdx int, wg *sync.WaitGroup, mutex *sync.Mutex) (networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int) {
+	//network
+	networkSet = make(map[int]*mat64.Dense)
+	idIdxSet = make(map[int]map[string]int)
+	//simple network
+	if modeIdx == 1 {
+		for i := 0; i < len(inNetworkFile); i++ {
+			networkSet[i], idIdxSet[i], _ = ReadNetwork(inNetworkFile[i])
+		}
+	} else if modeIdx == 2 {
+		//missing value filled by ave network
+		idxToId := make(map[int]string)
+		//loading network gene ids
+		idIdx, idxToId, _ := IdIdxGen(inNetworkFile[0])
+		for i := 1; i < len(inNetworkFile); i++ {
+			//idIdx as gene -> idx in net
+			idIdxTmp, idxToIdTmp, _ := IdIdxGen(inNetworkFile[i])
+			idIdx, idxToId = AccumIds(idIdxTmp, idxToIdTmp, idIdx, idxToId)
+		}
+		//mean network for missing value
+		nGene := len(idIdx)
+		totalNet := mat64.NewDense(nGene, nGene, nil)
+		countNet := mat64.NewDense(nGene, nGene, nil)
+		for i := 0; i < len(inNetworkFile); i++ {
+			log.Print("loading network file: ", inNetworkFile[i])
+			totalNet, countNet = FillNetwork(inNetworkFile[i], idIdx, idxToId, totalNet, countNet)
+		}
+		meanNet := MeanNet(totalNet, countNet)
+		for i := 0; i < len(inNetworkFile); i++ {
+			network := mat64.DenseCopyOf(meanNet)
+			networkSet[i] = UpdateNetwork(inNetworkFile[i], idIdx, idxToId, network)
+			idIdxSet[i] = idIdx
+		}
+	}
+
+	//normalize
+	wg.Add(len(inNetworkFile))
+	for i := 0; i < len(inNetworkFile); i++ {
+		go single_normNet(i, networkSet, wg, mutex)
+	}
+	wg.Wait()
+	return networkSet, idIdxSet
+}
+
+func single_normNet(i int, networkSet map[int]*mat64.Dense, wg *sync.WaitGroup, mutex *sync.Mutex) {
+	defer wg.Done()
+	//network, _ := colNorm(networkSet[i])
+	//network = rwrNetwork(network, 0.5)
+	network, _ := dNorm(networkSet[i])
+	mutex.Lock()
+	networkSet[i] = network
+	mutex.Unlock()
+}
+
+func PropagateNetworks(trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (tsXdata *mat64.Dense, trXdata *mat64.Dense, indAccum []int) {
 	tsXdata = mat64.NewDense(0, 0, nil)
 	trXdata = mat64.NewDense(0, 0, nil)
 	// for filtering prior genes, only those in training set are used for propagation
@@ -15,45 +69,19 @@ func ReadNetworkPropagate(trRowName []string, tsRowName []string, trYdata *mat64
 	for i := 0; i < len(trRowName); i++ {
 		trGeneMap[trRowName[i]] = i
 	}
-	//network
-	//network := mat64.NewDense(0, 0, nil)
-	//idIdx := make(map[string]int)
-	//idxToId := make(map[int]string)
 	indAccum = make([]int, 0)
-	//loading network gene ids
-	//idIdx, idxToId, _ = IdIdxGen(inNetworkFile[0])
-	//for i := 1; i < len(inNetworkFile); i++ {
-	//	//idIdx as gene -> idx in net
-	//	idIdxTmp, idxToIdTmp, _ := IdIdxGen(inNetworkFile[i])
-	//	idIdx, idxToId = AccumIds(idIdxTmp, idxToIdTmp, idIdx, idxToId)
-	//}
-	//mean network for missing value
-	//nGene := len(idIdx)
-	//totalNet := mat64.NewDense(nGene, nGene, nil)
-	//countNet := mat64.NewDense(nGene, nGene, nil)
-	//for i := 0; i < len(inNetworkFile); i++ {
-	//	log.Print("loading network file: ", inNetworkFile[i])
-	//	totalNet, countNet = FillNetwork(inNetworkFile[i], idIdx, idxToId, totalNet, countNet)
-	//}
-	//meanNet = MeanNet(totalNet, countNet)
 	//propagating networks
 	log.Print("propagating networks.")
-	for i := 0; i < len(inNetworkFile); i++ {
-		//network := mat64.DenseCopyOf(meanNet)
-		//network = UpdateNetwork(inNetworkFile[i], idIdx, idxToId, network)
-		//network = ReadNetwork(inNetworkFile[i], idIdx, idxToId, network)
-		//network, idIdx, idxToId := ReadNetwork(inNetworkFile[i])
-		network, idIdx, _ := ReadNetwork(inNetworkFile[i])
+	for i := 0; i < len(networkSet); i++ {
 		//sPriorData, ind := PropagateSetDLP(network, trYdata, idIdx, trRowName, trGeneMap, alpha, threads, wg)
-		sPriorData, ind := PropagateSet(network, trYdata, idIdx, trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
+		sPriorData, ind := PropagateSet(networkSet[i], trYdata, idIdxSet[i], trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
 		//sPriorData, ind := PropagateSet2D(network, trYdata, idIdx, trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
-		//FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
-		tsXdata, trXdata = FeatureDataStack(sPriorData, tsRowName, trRowName, idIdx, tsXdata, trXdata, trYdata, ind)
+		tsXdata, trXdata = FeatureDataStack(sPriorData, tsRowName, trRowName, idIdxSet[i], tsXdata, trXdata, trYdata, ind)
 		indAccum = append(indAccum, ind...)
 	}
 	return tsXdata, trXdata, indAccum
 }
-func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, inNetworkFile []string, transLabels *mat64.Dense, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (cvTrain []int, cvTest []int, trXdataCV *mat64.Dense, indAccum []int) {
+func PropagateNetworksCV(f int, folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (cvTrain []int, cvTest []int, trXdataCV *mat64.Dense, indAccum []int) {
 	cvTrain = make([]int, 0)
 	cvTest = make([]int, 0)
 	cvTestMap := map[int]int{}
@@ -85,18 +113,13 @@ func ReadNetworkPropagateCV(f int, folds map[int][]int, trRowName []string, tsRo
 	}
 	//codes
 	indAccum = make([]int, 0)
-	for i := 0; i < len(inNetworkFile); i++ {
+	for i := 0; i < len(networkSet); i++ {
 		//idIdx as gene -> idx in net
-		//network, idIdx, idxToId := ReadNetwork(inNetworkFile[i])
-		network, idIdx, _ := ReadNetwork(inNetworkFile[i])
-		//network := mat64.DenseCopyOf(meanNet)
-		//network = UpdateNetwork(inNetworkFile[i], idIdx, idxToId, network)
-
 		//sPriorData, ind := PropagateSetDLP(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, alpha, threads, wg)
-		sPriorData, ind := PropagateSet(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
+		sPriorData, ind := PropagateSet(networkSet[i], trYdataCV, idIdxSet[i], trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
 		//sPriorData, ind := PropagateSet2D(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
 		indAccum = append(indAccum, ind...)
-		trXdataCV = FeatureDataStackCV(sPriorData, trRowName, idIdx, trXdataCV, trYdataCV, ind)
+		trXdataCV = FeatureDataStackCV(sPriorData, trRowName, idIdxSet[i], trXdataCV, trYdataCV, ind)
 	}
 	return cvTrain, cvTest, trXdataCV, indAccum
 }

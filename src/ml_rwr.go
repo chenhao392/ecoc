@@ -4,6 +4,7 @@ import (
 	"github.com/gonum/matrix/mat64"
 	"log"
 	"math"
+	//"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -83,8 +84,8 @@ func FeatureDataStackCV(sPriorData *mat64.Dense, trRowName []string, idIdx map[s
 }
 
 func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, transLabels *mat64.Dense, isDada bool, alpha float64, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
-	network, nNetworkGene := dNorm(network)
 	nTrGene, nTrLabel := trYdata.Caps()
+	nNetworkGene, _ := network.Caps()
 	//ind for prior/label gene set mapping at least one gene to the network
 	ind = make([]int, nTrLabel)
 	for j := 0; j < nTrLabel; j++ {
@@ -563,7 +564,26 @@ func dNorm(network *mat64.Dense) (normNet *mat64.Dense, n int) {
 	normNet.Mul(term1, d)
 	return normNet, n
 }
-
+func rwrNetwork(network *mat64.Dense, alpha float64) *mat64.Dense {
+	n, _ := network.Caps()
+	d := mat64.NewDense(n, n, nil)
+	t := mat64.NewDense(n, n, nil)
+	rwrNet := mat64.NewDense(0, 0, nil)
+	for i := 0; i < n; i++ {
+		for j := 0; j < n; j++ {
+			if i == j {
+				t.Set(i, j, 1.0-(1.0-alpha)*network.At(i, j))
+				d.Set(i, j, alpha)
+			} else {
+				t.Set(i, j, (alpha-1.0)*network.At(i, j))
+			}
+		}
+	}
+	invT := mat64.NewDense(0, 0, nil)
+	invT.Inverse(t)
+	rwrNet.Mul(invT, d)
+	return rwrNet
+}
 func TransitionMatrixByK(network *mat64.Dense, k int) (transP *mat64.Dense, n int) {
 	n, _ = network.Caps()
 	if k >= n {

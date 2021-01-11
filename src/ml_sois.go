@@ -638,7 +638,6 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 					break
 				}
 				//row with the demanding minor label
-				//if trYdata.At(p, idx) == 1.0 && !rowUsed[p] {
 				if AlmostEqual(trYsub.At(p, idx), 1.0) {
 					//rowUsed[p] = true
 					//row synthetic from k nearest neighbors in feature set
@@ -651,24 +650,14 @@ func MLSMOTE(trXdata *mat64.Dense, trYdata *mat64.Dense, nKnn int, mlsRatio floa
 					}
 					nnIdx := DistanceTopK(nKnn+1, p, trXsub, trXsub)
 					for q := 1; q < len(nnIdx); q++ {
-						//str := ""
-						//for m := 0; m < nColX; m++ {
-						//	str = str + "\t" + fmt.Sprintf("%.3f", trXsub.At(nnIdx[0], m))
-						//}
-						//log.Print("ref X: \n", str)
 						for n := 0; n < perLabelRepeat[idx]; n++ {
 							//synX
 							tmp := make([]float64, 0)
 							trXsyn[synIdx] = tmp
-							//str1 := ""
-							//str2 := ""
 							for m := 0; m < nColX; m++ {
-								//str1 = str1 + "\t" + fmt.Sprintf("%.3f", trXsub.At(nnIdx[q], m))
 								xEle := trXsub.At(nnIdx[q], m) + 50000000.0*(randValues[rTick]+0.00000001)*(trXsub.At(nnIdx[0], m)-trXsub.At(nnIdx[q], m))
 								trXsyn[synIdx] = append(trXsyn[synIdx], xEle)
-								//str2 = str2 + "\t" + fmt.Sprintf("%.3f", xEle)
 							}
-							//log.Print("knn and syn X: \n", str1, "\n", str2)
 							tmp2 := make([]float64, 0)
 							trYsyn[synIdx] = tmp2
 							//synY

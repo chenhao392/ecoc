@@ -109,7 +109,10 @@ var predCmd = &cobra.Command{
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
 		posLabelRls, negLabelRls, transLabels := src.LabelRelationship(trYdata)
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
-		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, transLabels, isDada, alpha, threads, &wg, &mutex)
+		networkSet, idIdxSet := src.ReadAndNormNetworks(inNetworkFile, 1, &wg, &mutex)
+		//folds
+		folds := src.SOIS(trYdata, nFold, 10, 2, true)
+		tsXdata, trXdata, indAccum := src.PropagateNetworks(trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
 		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
@@ -132,13 +135,12 @@ var predCmd = &cobra.Command{
 		randValues := src.RandListFromUniDist(nTr, nFea)
 
 		//split training data for nested cv
-		folds := src.SOIS(trYdata, nFold, 10, 2, true)
 		trainFold := make([]src.CvFold, nFold)
 		testFold := make([]src.CvFold, nFold)
 
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccum := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, transLabels, isDada, alpha, threads, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccum := src.PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}

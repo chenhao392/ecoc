@@ -1561,7 +1561,7 @@ func CostSensitiveLoss(tsY *mat64.Dense, tsYHat *mat64.Dense) (totLoss float64) 
 			t := tsY.At(i, j)
 			q := tsYHat.At(i, j)
 			//false negative
-			if t == 1.0 && q < 0.5 {
+			if t == 1.0 && (q < 0.5 || math.IsNaN(q)) {
 				totLoss += colSum[j]
 			}
 			//false positive
@@ -1581,7 +1581,7 @@ func CrossEntropy(tsY *mat64.Dense, tsYHat *mat64.Dense) (totLoss float64) {
 			q := tsYHat.At(i, j)
 			if q >= 0.99999999 {
 				q = 0.99999999
-			} else if q <= 0.00000001 {
+			} else if q <= 0.00000001 || math.IsNaN(q) {
 				q = 0.00000001
 			}
 			loss := t*math.Log(q) + (1-t)*math.Log(1-q)

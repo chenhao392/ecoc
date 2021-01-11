@@ -97,7 +97,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		fBetaThres := 1.0
 		isAutoBeta := true
 
-		fBetaThres = math.log10(fBetaThres)
+		fBetaThres = math.Log10(fBetaThres)
 		//result dir and logging
 		logFile := src.Init(resFolder)
 		defer logFile.Close()
@@ -114,9 +114,10 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		trYdata, trRowName, _, _ := src.ReadFile(trY, true, true)
 		posLabelRls, negLabelRls, transLabels := src.LabelRelationship(trYdata)
 		inNetworkFile := strings.Split(inNetworkFiles, ",")
+		networkSet, idIdxSet := src.ReadAndNormNetworks(inNetworkFile, 1, &wg, &mutex)
 		//folds
 		folds := src.SOIS(trYdata, nFold, 10, 2, true)
-		tsXdata, trXdata, indAccum := src.ReadNetworkPropagate(trRowName, tsRowName, trYdata, inNetworkFile, transLabels, isDada, alpha, threads, &wg, &mutex)
+		tsXdata, trXdata, indAccum := src.PropagateNetworks(trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
 		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
@@ -143,7 +144,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		testFold := make([]src.CvFold, nFold)
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccumCV := src.ReadNetworkPropagateCV(f, folds, trRowName, tsRowName, trYdata, inNetworkFile, transLabels, isDada, alpha, threads, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccumCV := src.PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccumCV)
 		}
