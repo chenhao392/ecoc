@@ -88,7 +88,7 @@ var predCmd = &cobra.Command{
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 		isDada, _ := cmd.Flags().GetBool("ec")
-		alpha, _ := cmd.Flags().GetFloat64("alpha")
+		//alpha, _ := cmd.Flags().GetFloat64("alpha")
 		isVerbose, _ := cmd.Flags().GetBool("v")
 		fBetaThres := 1.0
 		isAutoBeta := false
@@ -112,7 +112,9 @@ var predCmd = &cobra.Command{
 		networkSet, idIdxSet := src.ReadAndNormNetworks(inNetworkFile, 1, &wg, &mutex)
 		//folds
 		folds := src.SOIS(trYdata, nFold, 10, 2, true)
-		tsXdata, trXdata, indAccum := src.PropagateNetworks(trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
+		//alphaEstimate
+		alphaSet := src.NpAlphaEstimate(folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, threads, &wg, &mutex)
+		tsXdata, trXdata, indAccum := src.PropagateNetworks(trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alphaSet, threads, &wg, &mutex)
 		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
@@ -140,7 +142,7 @@ var predCmd = &cobra.Command{
 
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccum := src.PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccum, _ := src.PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alphaSet, threads, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccum)
 		}

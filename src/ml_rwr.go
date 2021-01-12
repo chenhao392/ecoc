@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	//"os"
+	//"fmt"
 	"runtime"
 	"sort"
 	"sync"
@@ -83,7 +84,86 @@ func FeatureDataStackCV(sPriorData *mat64.Dense, trRowName []string, idIdx map[s
 	return trXdataCV
 }
 
-func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, transLabels *mat64.Dense, isDada bool, alpha float64, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
+func NpAlphaEstimate(folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) []float64 {
+	//alphaArr := []float64{0.5, 0.4, 0.6, 0.7, 0.3, 0.2, 0.8, 0.1, 0.9}
+	alphaArr := []float64{0.5, 0.2, 0.8}
+	_, nLabel := trYdata.Caps()
+	aMatrix := mat64.NewDense(len(alphaArr), nLabel*len(networkSet), nil)
+	aSet := make([]float64, nLabel*len(networkSet))
+	for i := 0; i < len(alphaArr); i++ {
+		//init alpha per label
+		alphaSet := make([]float64, nLabel*len(networkSet))
+		for j := 0; j < nLabel*len(networkSet); j++ {
+			alphaSet[j] = alphaArr[i]
+		}
+		//calculate aupr
+		for f := 0; f < len(folds); f++ {
+			_, _, _, _, auprSet := PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alphaSet, threads, wg, mutex)
+			//log.Print("fold,alpha: ", f, alphaArr[i])
+			//str := ""
+			//for j := 0; j < nLabel*len(networkSet); j++ {
+			//	str = str + fmt.Sprintf("\t%.2f", auprSet[j])
+			//}
+			//log.Print(str)
+			//accum aupr
+			for j := 0; j < nLabel*len(networkSet); j++ {
+				aMatrix.Set(i, j, aMatrix.At(i, j)+auprSet[j])
+			}
+		}
+	}
+	//best alpha
+	for j := 0; j < nLabel*len(networkSet); j++ {
+		var sortMap []kv
+		for i := 0; i < len(alphaArr); i++ {
+			sortMap = append(sortMap, kv{i, aMatrix.At(i, j)})
+		}
+		sort.Slice(sortMap, func(p, q int) bool {
+			return sortMap[p].Value > sortMap[q].Value
+		})
+		maxThres := 0.99 * sortMap[0].Value
+		for i := 0; i < len(alphaArr); i++ {
+			if aMatrix.At(i, j) >= maxThres {
+				aSet[j] = alphaArr[i]
+				//log.Print("choose idx: ", i, " and alpha: ", aSet[j], " with aupr: ", aMatrix.At(i, j))
+				break
+			}
+		}
+
+		//str := ""
+		//for i := 0; i < len(alphaArr); i++ {
+		//	str = str + fmt.Sprintf("\t%d|%.2f", sortMap[i].Key, sortMap[i].Value)
+		//}
+		//log.Print(str)
+	}
+	return aSet
+}
+
+func NPauprSet(tsYdataCV *mat64.Dense, sPriorData *mat64.Dense, tsRowName []string, idIdx map[string]int, ind []int) (auprSet []float64) {
+	//feature stack
+	_, nTrLabel := tsYdataCV.Caps()
+	auprSet = make([]float64, nTrLabel)
+	//tsX
+	cLabel := 0
+	for l := 0; l < nTrLabel; l++ {
+		if ind[l] > 1 {
+			tmpArr := make([]float64, len(tsRowName))
+			for k := 0; k < len(tsRowName); k++ {
+				_, exist := idIdx[tsRowName[k]]
+				if exist {
+					//tmpTsXVec.Set(k, 0, sPriorData.At(idIdx[tsRowName[k]], cLabel))
+					tmpArr[k] = sPriorData.At(idIdx[tsRowName[k]], cLabel)
+				}
+			}
+			tmpTsXVec := mat64.NewVector(len(tsRowName), tmpArr)
+			tAupr, _, _, _ := ComputeAupr(tsYdataCV.ColView(l), tmpTsXVec, 1.0)
+			auprSet[l] = auprSet[l] + tAupr
+			cLabel += 1
+		}
+	}
+	return auprSet
+}
+
+func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]int, idArr []string, trGeneMap map[string]int, transLabels *mat64.Dense, isDada bool, alphaSet []float64, wg *sync.WaitGroup, mutex *sync.Mutex) (sPriorData *mat64.Dense, ind []int) {
 	nTrGene, nTrLabel := trYdata.Caps()
 	nNetworkGene, _ := network.Caps()
 	//ind for prior/label gene set mapping at least one gene to the network
@@ -121,9 +201,9 @@ func PropagateSet(network *mat64.Dense, trYdata *mat64.Dense, idIdx map[string]i
 			}
 			prior := mat64.DenseCopyOf(trY)
 			if isDada {
-				go single_sPriorDataDada(network, sPriorData, prior, trY, nNetworkGene, alpha, c, wg, mutex)
+				go single_sPriorDataDada(network, sPriorData, prior, trY, nNetworkGene, alphaSet[j], c, wg, mutex)
 			} else {
-				go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, 100, alpha, c, wg, mutex)
+				go single_sPriorData(network, sPriorData, prior, trY, nNetworkGene, 100, alphaSet[j], c, wg, mutex)
 			}
 			c += 1
 		}

@@ -1438,43 +1438,44 @@ func FscoreBeta(tsYdata *mat64.Dense, tsYhat *mat64.Dense, objFuncIndex int, fBe
 			notConverged = false
 		}
 	}
-	//thres and score using best beta
-	for i := 0; i < nCol; i++ {
-		_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta.At(0, i))
-		thresData.Set(0, i, optThres)
-	}
-	tmpTsYhat, _ = SoftThresScale(tsYhat, thresData)
-	score := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
-	optOrder := RatioPosPerLabel(tmpTsYhat, tsYdata)
-	//per label converge
-	itr, maxItr, notConverged = 0, 50, true
-	for notConverged && itr <= maxItr {
-		itr += 1
-		notConverged = false
+	/*
+		//thres and score using best beta
 		for i := 0; i < nCol; i++ {
-			idx := optOrder[i]
-			tmpThresData := mat64.DenseCopyOf(thresData)
-			betaSet := []float64{beta.At(0, idx) - 0.2, beta.At(0, idx) - 0.1, beta.At(0, idx) + 0.1, beta.At(0, idx) + 0.2}
-			for j := 0; j < len(betaSet); j++ {
-				_, _, _, optThres := ComputeAupr(tsYdata.ColView(idx), tsYhat.ColView(idx), betaSet[j])
-				tmpThresData.Set(0, idx, optThres)
-				//tmpScore
-				tmpTsYhat, _ := SoftThresScale(tsYhat, tmpThresData)
-				tmpScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
-				diff := tmpScore - score
-				if diff > 0 {
-					score = tmpScore
-					beta.Set(0, idx, betaSet[j])
-					thresData = tmpThresData
-					notConverged = true
+			_, _, _, optThres := ComputeAupr(tsYdata.ColView(i), tsYhat.ColView(i), beta.At(0, i))
+			thresData.Set(0, i, optThres)
+		}
+		tmpTsYhat, _ = SoftThresScale(tsYhat, thresData)
+		score := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
+		optOrder := RatioPosPerLabel(tmpTsYhat, tsYdata)
+		//per label converge
+		itr, maxItr, notConverged = 0, 50, true
+		for notConverged && itr <= maxItr {
+			itr += 1
+			notConverged = false
+			for i := 0; i < nCol; i++ {
+				idx := optOrder[i]
+				tmpThresData := mat64.DenseCopyOf(thresData)
+				betaSet := []float64{beta.At(0, idx) - 0.2, beta.At(0, idx) - 0.1, beta.At(0, idx) + 0.1, beta.At(0, idx) + 0.2}
+				for j := 0; j < len(betaSet); j++ {
+					_, _, _, optThres := ComputeAupr(tsYdata.ColView(idx), tsYhat.ColView(idx), betaSet[j])
+					tmpThresData.Set(0, idx, optThres)
+					//tmpScore
+					tmpTsYhat, _ := SoftThresScale(tsYhat, tmpThresData)
+					tmpScore := FscoreWrapper(tsYdata, tmpTsYhat, rankCut, objFuncIndex)
+					diff := tmpScore - score
+					if diff > 0 {
+						score = tmpScore
+						beta.Set(0, idx, betaSet[j])
+						thresData = tmpThresData
+						notConverged = true
+					}
 				}
 			}
+			//refresh optOrder
+			tmpTsYhat, _ := SoftThresScale(tsYhat, thresData)
+			optOrder = RatioPosPerLabel(tmpTsYhat, tsYdata)
 		}
-		//refresh optOrder
-		tmpTsYhat, _ := SoftThresScale(tsYhat, thresData)
-		optOrder = RatioPosPerLabel(tmpTsYhat, tsYdata)
-	}
-
+	*/
 	return beta
 }
 
@@ -1491,7 +1492,7 @@ func FscoreWrapper(tsYdata *mat64.Dense, tmpTsYhat *mat64.Dense, rankCut int, ob
 	case 4:
 		score = CostSensitiveMicroAupr(tsYdata, tmpTsYhat)
 	case 5:
-		score = 0 - CrossEntropy(tsYdata, tmpTsYhat)
+		score = CrossEntropy(tsYdata, tmpTsYhat)
 	case 6:
 		score = 0 - CostSensitiveLoss(tsYdata, tmpTsYhat)
 	default:

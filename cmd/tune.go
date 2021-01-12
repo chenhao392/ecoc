@@ -91,7 +91,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		reg, _ := cmd.Flags().GetBool("r")
 		nFold, _ := cmd.Flags().GetInt("nFold")
 		isDada, _ := cmd.Flags().GetBool("ec")
-		alpha, _ := cmd.Flags().GetFloat64("alpha")
+		//alpha, _ := cmd.Flags().GetFloat64("alpha")
 		mlsRatio, _ := cmd.Flags().GetFloat64("mlsRatio")
 		isVerbose, _ := cmd.Flags().GetBool("v")
 		fBetaThres := 1.0
@@ -117,7 +117,9 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		networkSet, idIdxSet := src.ReadAndNormNetworks(inNetworkFile, 1, &wg, &mutex)
 		//folds
 		folds := src.SOIS(trYdata, nFold, 10, 2, true)
-		tsXdata, trXdata, indAccum := src.PropagateNetworks(trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
+		//alphaEstimate
+		alphaSet := src.NpAlphaEstimate(folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, threads, &wg, &mutex)
+		tsXdata, trXdata, indAccum := src.PropagateNetworks(trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alphaSet, threads, &wg, &mutex)
 		nTr, nFea := trXdata.Caps()
 		_, nLabel := trYdata.Caps()
 		if nFea < nLabel {
@@ -144,7 +146,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 		testFold := make([]src.CvFold, nFold)
 		//nested cv training data propagation on networks
 		for f := 0; f < nFold; f++ {
-			cvTrain, cvTest, trXdataCV, indAccumCV := src.PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alpha, threads, &wg, &mutex)
+			cvTrain, cvTest, trXdataCV, indAccumCV, _ := src.PropagateNetworksCV(f, folds, trRowName, tsRowName, trYdata, networkSet, idIdxSet, transLabels, isDada, alphaSet, threads, &wg, &mutex)
 			trainFold[f].SetXYinNestedTraining(cvTrain, trXdataCV, trYdata, []int{})
 			testFold[f].SetXYinNestedTraining(cvTest, trXdataCV, trYdata, indAccumCV)
 		}
@@ -176,7 +178,7 @@ Hyperparameter tuning and benchmarking for the following parameters.
 func init() {
 	rootCmd.AddCommand(tuneCmd)
 
-	tuneCmd.Flags().Float64("alpha", 0.2, "alpha value for a single label propgation\n")
+	tuneCmd.Flags().Float64("alpha", 0.5, "alpha value for a single label propgation\n")
 	tuneCmd.Flags().Float64("mlsRatio", 0.1, "multi-label SMOTE ratio\n")
 	tuneCmd.Flags().Int("c", 3, "top c predictions for a gene to used\nin multi-label F1 calculation")
 	tuneCmd.Flags().Int("ld", 1, "lower bound, number of CCA dimensions")

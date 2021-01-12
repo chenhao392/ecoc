@@ -61,7 +61,8 @@ func single_normNet(i int, networkSet map[int]*mat64.Dense, wg *sync.WaitGroup, 
 	mutex.Unlock()
 }
 
-func PropagateNetworks(trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (tsXdata *mat64.Dense, trXdata *mat64.Dense, indAccum []int) {
+func PropagateNetworks(trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, alphaSet []float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (tsXdata *mat64.Dense, trXdata *mat64.Dense, indAccum []int) {
+	_, nLabel := trYdata.Caps()
 	tsXdata = mat64.NewDense(0, 0, nil)
 	trXdata = mat64.NewDense(0, 0, nil)
 	// for filtering prior genes, only those in training set are used for propagation
@@ -73,15 +74,19 @@ func PropagateNetworks(trRowName []string, tsRowName []string, trYdata *mat64.De
 	//propagating networks
 	log.Print("propagating networks.")
 	for i := 0; i < len(networkSet); i++ {
+		s := i * nLabel
+		alphaSubSet := alphaSet[s : s+nLabel]
 		//sPriorData, ind := PropagateSetDLP(network, trYdata, idIdx, trRowName, trGeneMap, alpha, threads, wg)
-		sPriorData, ind := PropagateSet(networkSet[i], trYdata, idIdxSet[i], trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
+		sPriorData, ind := PropagateSet(networkSet[i], trYdata, idIdxSet[i], trRowName, trGeneMap, transLabels, isDada, alphaSubSet, wg, mutex)
 		//sPriorData, ind := PropagateSet2D(network, trYdata, idIdx, trRowName, trGeneMap, transLabels, isDada, alpha, wg, mutex)
 		tsXdata, trXdata = FeatureDataStack(sPriorData, tsRowName, trRowName, idIdxSet[i], tsXdata, trXdata, trYdata, ind)
 		indAccum = append(indAccum, ind...)
 	}
 	return tsXdata, trXdata, indAccum
 }
-func PropagateNetworksCV(f int, folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, alpha float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (cvTrain []int, cvTest []int, trXdataCV *mat64.Dense, indAccum []int) {
+
+func PropagateNetworksCV(f int, folds map[int][]int, trRowName []string, tsRowName []string, trYdata *mat64.Dense, networkSet map[int]*mat64.Dense, idIdxSet map[int]map[string]int, transLabels *mat64.Dense, isDada bool, alphaSet []float64, threads int, wg *sync.WaitGroup, mutex *sync.Mutex) (cvTrain []int, cvTest []int, trXdataCV *mat64.Dense, indAccum []int, auprAccum []float64) {
+	_, nLabel := trYdata.Caps()
 	cvTrain = make([]int, 0)
 	cvTest = make([]int, 0)
 	cvTestMap := map[int]int{}
@@ -106,22 +111,32 @@ func PropagateNetworksCV(f int, folds map[int][]int, trRowName []string, tsRowNa
 	trXdataCV = mat64.NewDense(0, 0, nil)
 	_, nColY := trYdata.Caps()
 	trYdataCV := mat64.NewDense(len(cvTrain), nColY, nil)
+	tsYdataCV := mat64.NewDense(len(cvTest), nColY, nil)
 	trRowNameCV := make([]string, 0)
+	tsRowNameCV := make([]string, 0)
 	for s := 0; s < len(cvTrain); s++ {
 		trYdataCV.SetRow(s, trYdata.RawRowView(cvTrain[s]))
 		trRowNameCV = append(trRowNameCV, trRowName[cvTrain[s]])
 	}
+	for s := 0; s < len(cvTest); s++ {
+		tsYdataCV.SetRow(s, trYdata.RawRowView(cvTest[s]))
+		tsRowNameCV = append(tsRowNameCV, trRowName[cvTest[s]])
+	}
 	//codes
 	indAccum = make([]int, 0)
 	for i := 0; i < len(networkSet); i++ {
+		s := i * nLabel
+		alphaSubSet := alphaSet[s : s+nLabel]
 		//idIdx as gene -> idx in net
 		//sPriorData, ind := PropagateSetDLP(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, alpha, threads, wg)
-		sPriorData, ind := PropagateSet(networkSet[i], trYdataCV, idIdxSet[i], trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
+		sPriorData, ind := PropagateSet(networkSet[i], trYdataCV, idIdxSet[i], trRowNameCV, trGeneMapCV, transLabels, isDada, alphaSubSet, wg, mutex)
 		//sPriorData, ind := PropagateSet2D(network, trYdataCV, idIdx, trRowNameCV, trGeneMapCV, transLabels, isDada, alpha, wg, mutex)
-		indAccum = append(indAccum, ind...)
+		auprSet := NPauprSet(tsYdataCV, sPriorData, tsRowNameCV, idIdxSet[i], ind)
 		trXdataCV = FeatureDataStackCV(sPriorData, trRowName, idIdxSet[i], trXdataCV, trYdataCV, ind)
+		indAccum = append(indAccum, ind...)
+		auprAccum = append(auprAccum, auprSet...)
 	}
-	return cvTrain, cvTest, trXdataCV, indAccum
+	return cvTrain, cvTest, trXdataCV, indAccum, auprAccum
 }
 
 func single_AccumTsYdata(objFuncIndex int, fBetaThres float64, isAutoBeta bool, globalBeta *mat64.Dense, tsYfold *mat64.Dense, rawTsYhat *mat64.Dense, iFold int, c int, colSum *mat64.Vector, tsX *mat64.Dense, indAccum []int, YhRawSet *map[int]*mat64.Dense, YhPlattSet *map[int]*mat64.Dense, YhPlattSetCalibrated *map[int]*mat64.Dense, yPlattSet *map[int]*mat64.Dense, iFoldMarker *map[int]*mat64.Dense, yPredSet *map[int]*mat64.Dense, xSet *map[int]*mat64.Dense, plattRobustMeasure map[int]*mat64.Dense, plattRobustLamda []float64, wg *sync.WaitGroup, mutex *sync.Mutex) {
